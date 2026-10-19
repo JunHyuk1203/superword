@@ -99,29 +99,54 @@ function escapeCSV(s) {
   return (v.includes(',') || v.includes('\n') || v.includes('"')) ? `"${v}"` : v;
 }
 
+const modalCloseTimers = new WeakMap();
+
 function openModal(modalEl) {
+  clearTimeout(modalCloseTimers.get(modalEl));
+  modalCloseTimers.delete(modalEl);
   document.body.classList.add('modal-open');
   // Use visibility instead of display:none removal to avoid layout flash
   modalEl.classList.remove('hidden');
   // Double rAF ensures browser has painted 1 frame before starting transition
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
+      if (modalEl.classList.contains('hidden') || modalCloseTimers.has(modalEl)) return;
       modalEl.classList.add('show');
     });
   });
 }
 function closeModal(modalEl) {
+  clearTimeout(modalCloseTimers.get(modalEl));
   modalEl.classList.remove('show');
-  setTimeout(() => {
+  if (modalEl.id === 'test-modal') document.body.classList.remove('test-open');
+  modalCloseTimers.set(modalEl, setTimeout(() => {
     modalEl.classList.add('hidden');
+    modalCloseTimers.delete(modalEl);
     if (!document.querySelector('.modal-screen.show')) {
       document.body.classList.remove('modal-open');
     }
-  }, 400);
+  }, 400));
 }
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  const modals = [...document.querySelectorAll('.modal-screen.show')];
+  const topModal = modals.sort((a, b) =>
+    Number(getComputedStyle(a).zIndex) - Number(getComputedStyle(b).zIndex)
+  ).pop();
+  if (topModal) closeModal(topModal);
+});
 
 // ── Apple Bottom Sheet Dismissal Logic ──
 document.querySelectorAll('.modal-screen').forEach(modal => {
+  const title = modal.querySelector('.sheet-title, h2');
+  if (title) {
+    title.id ||= `${modal.id}-title`;
+    modal.setAttribute('aria-labelledby', title.id);
+  }
+  modal.querySelectorAll('.sheet-close-btn').forEach(button => {
+    button.setAttribute('aria-label', '닫기');
+  });
   // Tap outside to dismiss
   modal.addEventListener('click', (e) => {
     if (e.target === modal) closeModal(modal);
@@ -257,6 +282,14 @@ let currentLibraryLevel = 0; // 0: Books, 1: Chapters, 2: Words
 
 function setLibraryLevel(newIndex) {
   currentLibraryLevel = newIndex;
+  const inWords = newIndex === 2;
+  document.body.dataset.libraryLevel = String(newIndex);
+  hideToggleBar.classList.toggle('hidden', !inWords);
+  if (!inWords) {
+    hideToggleBar.classList.remove('active-view', 'idle-left', 'idle-right');
+    document.body.classList.remove('shorts-mode-active');
+    window.speechSynthesis?.cancel();
+  }
   const views = [layerBooks, layerChapters, layerWords];
   views.forEach((v, i) => {
     if (!v) return;
@@ -3183,7 +3216,7 @@ window.addEventListener('popstate', (e) => {
   // Check if any modals are open. If so, close them.
   const openModals = document.querySelectorAll('.modal-screen:not(.hidden)');
   if (openModals.length > 0) {
-    openModals.forEach(m => m.classList.add('hidden'));
+    openModals.forEach(m => closeModal(m));
     
     // Re-push current state to negate the pop
     if (currentLibraryLevel === 0) {

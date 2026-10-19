@@ -3019,33 +3019,73 @@ button:active {
 .sheet-modal {
   margin: 0 auto;
   width: 100%;
-  max-width: 100%;
+  max-width: 640px;
+  max-height: 92vh;
+  max-height: 92dvh;
   box-sizing: border-box;
-  padding: 20px 0 calc(16px + env(safe-area-inset-bottom));
-  border-radius: 26px 26px 0 0;
-  background: transparent; /* overridden from .modal-screen-content */
+  padding: 0 24px calc(24px + env(safe-area-inset-bottom));
+  border-radius: 24px 24px 0 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
   position: relative;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
+
+.sheet-modal::before, .sheet-modal::after {
+  display: none;
+}
+
+.sheet-modal > * {
+  flex-shrink: 0;
+}
+
+.sheet-modal > *:not(:first-child) {
+  overflow-y: visible;
+}
+
+.sheet-modal .option-card {
+  min-width: 0;
+  background: var(--bg-card);
+  border-color: var(--border);
+  border-radius: 12px;
+}
+
+.sheet-modal .select-input {
+  min-width: 0;
+  width: 100%;
+  background: var(--bg-tertiary);
+}
+
+.sheet-modal .select-input option { background: var(--bg-secondary); }
 
 .sheet-drag-bar {
   width: 36px;
   height: 5px;
-  background: #3A3A3C;
+  background: var(--border);
   border-radius: 3px;
-  margin: -4px auto 16px; /* -4px to pull it up slightly closer to the top edge */
+  margin: 12px auto 16px;
 }
 
 body[data-theme='light'] .sheet-drag-bar {
-  background: #3A3A3C;
+  background: var(--border);
 }
 
 .sheet-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
+  padding-bottom: 16px !important;
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--bg-secondary);
 }
 
 .sheet-title {
@@ -3058,12 +3098,13 @@ body[data-theme='light'] .sheet-drag-bar {
 
 .sheet-close-btn {
   /* Visible icon is 28px but tap area is 44x44 for reliable touch */
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
   border-radius: 50%;
-  background: #2C2C2E;
+  background: var(--bg-tertiary);
   border: none;
-  color: #EBEBF5;
+  color: var(--text-secondary);
   opacity: 1;
   cursor: pointer;
   padding: 0;
@@ -3087,6 +3128,108 @@ body[data-theme='light'] .sheet-drag-bar {
   height: 16px;
   fill: none;
   pointer-events: none;
+  stroke: currentColor;
+}
+
+#test-setup .option-card > div {
+  flex-wrap: wrap;
+}
+
+#test-setup .test-mode-btn {
+  flex: 1 1 100px;
+}
+
+#history-list {
+  max-height: none !important;
+  overflow-y: visible !important;
+  padding-right: 0 !important;
+}
+
+body:not([data-library-level="2"]) .hide-toggle-bar,
+body.modal-open .hide-toggle-bar {
+  display: none !important;
+}
+
+button:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+/* Desktop workspace: a full-width toolbar and a readable multi-column library. */
+@media (min-width: 960px) {
+  .app-container {
+    max-width: 1280px;
+    padding: 24px 40px 112px;
+  }
+
+  .ios-nav-bar {
+    top: 16px;
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    margin-bottom: 28px;
+  }
+
+  .ios-nav-bar-inner {
+    max-width: none;
+    padding: 12px 24px 8px;
+  }
+
+  .ios-nav-inline { height: 48px; }
+  .ios-nav-title-inline { text-align: left; }
+
+  .ios-large-title {
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    padding: 12px 0;
+  }
+
+  .ios-large-title-text { font-size: 30px; overflow-wrap: anywhere; }
+  .words-action-bar { gap: 12px; flex-wrap: wrap; }
+  .circle-action-btn { min-width: 56px; }
+  .ios-nav-action-btn:hover, .circle-action-btn:hover, .edit-circle-btn:hover {
+    background: var(--bg-tertiary);
+  }
+
+  .words-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 20px;
+    padding-bottom: 40px;
+  }
+
+  .word-card { min-width: 0; padding: 24px; border: 1px solid var(--border); }
+  .word-card-section { overflow-wrap: anywhere; }
+  #view-books, #view-chapters {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)) !important;
+    gap: 20px !important;
+  }
+  .lib-card { min-height: 156px; padding: 28px; }
+  #add-book-wrap, #add-chapter-wrap { margin-bottom: 24px !important; }
+  #add-book-btn, #add-chapter-btn { min-height: 44px; padding: 10px 20px !important; }
+
+  .modal-screen { justify-content: center; align-items: center; padding: 32px; }
+  .modal-screen .sheet-modal {
+    border-radius: 24px;
+    max-height: calc(100dvh - 64px);
+    padding: 0 28px 28px;
+    transform: translateY(24px) scale(0.98);
+    transition: transform 0.25s var(--spring-smooth);
+  }
+  .modal-screen.show .sheet-modal { transform: none; }
+  .modal-screen.hidden .sheet-modal { transform: translateY(24px) scale(0.98); }
+  .sheet-modal .sheet-drag-bar { display: none; }
+  .sheet-header { padding-top: 24px !important; }
+
+  body.shorts-mode-active .app-container { max-width: 860px; margin: 0 auto; }
+  body.shorts-mode-active .ios-nav-bar { border-radius: 0; margin-bottom: 0; top: 0; }
+}
+
+@media (max-width: 599px) {
+  .sheet-modal { padding-left: 20px; padding-right: 20px; }
+  .sheet-modal .options-grid { grid-template-columns: 1fr; }
 }
 
 /* Primary Action Button Unified */
@@ -3342,11 +3485,6 @@ body[data-theme='light'] .sheet-drag-bar {
 .landing-footer .divider {
   margin: 0 10px;
   color: var(--border);
-}
-
-#settings-modal .modal-screen-content > *:not(:first-child),
-#settings-modal .modal-screen-content > h3 {
-  padding: 0 8px !important;
 }
 
 /* Trace Mode */

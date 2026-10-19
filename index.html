@@ -14,7 +14,7 @@
   <meta name="description" content="단어장을 관리하고 AI로 단어를 추출하여 학습하는 스마트 단어장 앱입니다." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Nunito:wght@700;800;900&family=Jua&family=Comic+Neue:wght@700&family=Nanum+Pen+Script&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=tracefont1" />
+  <link rel="stylesheet" href="style.css?v=desktop-dialogs1" />
   <script src="https://cdn.jsdelivr.net/npm/hangul-js@0.2.6/hangul.min.js"></script>
   <style>
     /* Hard override: no scrollbars ever, but keep scrollability */
@@ -28,7 +28,7 @@
   <span style="font-family: 'Comic Neue'; font-weight: 700;">.</span>
   <span style="font-family: 'Nanum Pen Script'; font-weight: 400;">.</span>
 </div>
-<div id="page-wrapper" style="overflow-x: hidden; position: relative; min-height: 100vh; width: 100%;">
+<div id="page-wrapper" style="overflow-x: clip; position: relative; min-height: 100vh; width: 100%;">
   <div class="bg-orb orb-1"></div>
   <div class="bg-orb orb-2"></div>
   <div class="bg-orb orb-3"></div>
@@ -169,6 +169,8 @@
         </div>
       </div>
 
+      </div> <!-- End navigation bar -->
+
       <!-- Library Views Container -->
       <div id="lib-views-container" style="display: grid; align-items: start; width:100%; min-height: 60vh; overflow: hidden; position: relative;">
         
@@ -233,7 +235,9 @@
       <p>superword ✦ GoodNotes 호환 CSV 내보내기</p>
       <p id="build-time" style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;"></p>
     </footer>
-  </div>
+    </div> <!-- End library-content -->
+  </div> <!-- End app-container -->
+</div> <!-- End page-wrapper -->
 
   <!-- Floating Hide Toggle Bar (fixed bottom) -->
   <div class="hide-toggle-bar hidden" id="hide-toggle-bar">
@@ -302,7 +306,7 @@
     <div class="modal-screen-content export-modal-box sheet-modal">
       <div class="sheet-drag-bar"></div>
       <div class="sheet-header">
-        <h2 class="sheet-title">📤 CSV 내보내기</h2>
+        <h2 class="sheet-title">CSV 내보내기</h2>
         <button id="close-export-btn" class="sheet-close-btn"><svg viewBox="0 0 24 24" fill="none" stroke="#EBEBF5" stroke-width="2.5" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
       </div>
       
@@ -332,7 +336,6 @@
             <span class="btn-icon">⚡</span> CSV 변환하기
           </button>
         </div>
-      </div>
     </div>
   </div>
 
@@ -341,7 +344,7 @@
     <div class="modal-screen-content test-modal-box sheet-modal">
       <div class="sheet-drag-bar"></div>
       <div class="sheet-header">
-        <h2 class="sheet-title">🧪 테스트 설정</h2>
+        <h2 class="sheet-title">테스트</h2>
         <button id="test-close-btn-header" class="sheet-close-btn"><svg viewBox="0 0 24 24" fill="none" stroke="#EBEBF5" stroke-width="2.5" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
       </div>
       <!-- Test setup screen -->
@@ -604,7 +607,7 @@
     <div class="modal-screen-content sheet-modal">
       <div class="sheet-drag-bar"></div>
       <div class="sheet-header">
-        <h2 class="sheet-title">내 테스트 기록</h2>
+        <h2 class="sheet-title">학습 기록</h2>
         <button id="history-close-btn-header" class="sheet-close-btn"><svg viewBox="0 0 24 24" fill="none" stroke="#EBEBF5" stroke-width="2.5" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
       </div>
       <div id="history-list" style="display:flex; flex-direction:column; gap:10px; max-height:65vh; overflow-y:auto; padding-right:10px;">
@@ -619,8 +622,12 @@
 
   <!-- History Detail Modal -->
   <div id="history-detail-modal" class="modal-screen hidden" role="dialog" aria-modal="true" style="z-index: 10001;">
-    <div class="modal-screen-content" style="max-width:500px;">
-      <h2 class="test-title" style="margin-bottom:1rem;font-size:1.3rem;">테스트 상세 결과</h2>
+    <div class="modal-screen-content sheet-modal">
+      <div class="sheet-drag-bar"></div>
+      <div class="sheet-header">
+        <h2 class="sheet-title">테스트 상세 결과</h2>
+        <button class="sheet-close-btn" aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
       <div style="margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center; background:var(--bg-surface); padding:1rem; border-radius:12px; border:1px solid var(--border-color);">
         <div style="display:flex; flex-direction:column; gap:0.3rem;">
           <span id="history-detail-title" style="font-weight:600; font-size:1.05rem;"></span>
@@ -725,7 +732,7 @@
           </p>
         </div>
 
-        <button id="settings-save-btn" class="generate-btn" style="width:100%; margin-top:8px;">변경사항 저장</button>
+        <button id="settings-save-btn" class="primary-action-btn" style="width:100%; margin-top:8px;">변경사항 저장</button>
       </div>
 
     </div>
@@ -760,6 +767,6 @@
 
   <span style="font-family:'Pretendard'; opacity:0; pointer-events:none;">.</span>
   <span style="font-family:'Pretendard'; font-weight:700; opacity:0; pointer-events:none;">.</span>
-  <script type="module" src="app.js?v=tracefont1"></script>
+  <script type="module" src="app.js?v=desktop-dialogs1"></script>
 </body>
 </html>
