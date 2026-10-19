@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function verifiedUser() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function ownsUserPath(userId) {
+      return verifiedUser() && (
+        request.auth.uid == userId ||
+        // Preserve the existing owner's legacy data without granting public access.
+        (userId == 'default_user' && request.auth.token.email == 'tntgame1203@gmail.com')
+      );
+    }
+
+    match /users/{userId} {
+      allow read, write: if ownsUserPath(userId);
+
+      match /books/{bookId} {
+        allow read, write: if ownsUserPath(userId);
+        match /chapters/{chapterId} {
+          allow read, write: if ownsUserPath(userId);
+          match /words/{wordId} {
+            allow read, write: if ownsUserPath(userId);
+          }
+          match /testHistory/{recordId} {
+            allow read, write: if ownsUserPath(userId);
+          }
+        }
+      }
+      match /appeals/{appealId} {
+        allow read: if ownsUserPath(userId);
+        // Only the authenticated server function can create trusted cached grades.
+        allow write: if false;
+      }
+    }
+    // Secrets, shared quotas, and legacy global appeals are never client-readable.
+  }
+}

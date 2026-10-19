@@ -1,0 +1,5 @@
+// Keep validation output separate from the existing Android Studio build/cache.
+gradle.beforeProject { project ->
+    project.layout.buildDirectory.set(new File(project.rootDir.parentFile,
+        "security-test-results/android/${project.name}"))
+}

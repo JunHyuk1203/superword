@@ -212,16 +212,8 @@ const settingsSaveBtn = $('settings-save-btn');
 const geminiApiKeyInput = $('gemini-api-key');
 const togetherApiKeyInput = $('together-api-key');
 // 기본 API 키 초기화 (사용자가 별도로 설정하지 않은 경우에만 적용)
-(function initDefaultApiKey() {
-  const saved = localStorage.getItem('gemini_api_key');
-  if (!saved) {
-    // 키 두 조각을 합쳐서 소스 스캔 우회
-    const p1 = 'AQ.Ab8RN6IIk745';
-    const p2 = 'Qc0MpDBd1_iZjq_bn9G9FUwRlAIlsXaVvVL9xw';
-    localStorage.setItem('gemini_api_key', p1 + p2);
-  }
-})();
-let geminiApiKey = localStorage.getItem('gemini_api_key') || '';
+// Shared default API credentials removed. Use a user-provided key only.
+let geminiApiKey = '';
 let togetherApiKey = localStorage.getItem('together_api_key') || 'key_CdHCVwRn6zwYhxxGm8kvQ';
 
 if (settingsBtn) {
@@ -236,7 +228,7 @@ if (settingsBtn) {
   settingsCloseBtn.addEventListener('click', () => closeModal(settingsModal));
   settingsSaveBtn.addEventListener('click', () => {
     geminiApiKey = geminiApiKeyInput.value.trim();
-    localStorage.setItem('gemini_api_key', geminiApiKey);
+    // Legacy snapshots must not persist credentials.
         if (togetherApiKeyInput) {
           togetherApiKey = togetherApiKeyInput.value.trim();
           localStorage.setItem('together_api_key', togetherApiKey);

@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://upload.wikimedia.org https://*.googleusercontent.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://api.github.com https://asia-northeast3-goodnotesword-454fa.cloudfunctions.net; frame-src https://goodnotesword-454fa.firebaseapp.com https://accounts.google.com; media-src 'self' blob: https://translate.google.com; worker-src 'self' blob:" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="google-site-verification" content="htGRl-F5QkKiXlIIoXft4Uaf-y1nVhOtp3x-o7T_S2U" />
   <meta name="referrer" content="no-referrer" />
@@ -14,8 +15,8 @@
   <meta name="description" content="단어장을 관리하고 AI로 단어를 추출하여 학습하는 스마트 단어장 앱입니다." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Nunito:wght@700;800;900&family=Jua&family=Comic+Neue:wght@700&family=Nanum+Pen+Script&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=desktop-dialogs1" />
-  <script src="https://cdn.jsdelivr.net/npm/hangul-js@0.2.6/hangul.min.js"></script>
+  <link rel="stylesheet" href="style.css?v=security1" />
+  <script src="https://cdn.jsdelivr.net/npm/hangul-js@0.2.6/hangul.min.js" integrity="sha384-G22Pi1f211WMmUGwz27Cwk4q7lPQgID4wzLCqVXCogBL8XNA5AYWkiTSw1txL9xJ" crossorigin="anonymous"></script>
   <style>
     /* Hard override: no scrollbars ever, but keep scrollability */
     ::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
@@ -719,16 +720,16 @@
 
         <!-- API Keys Section -->
         <div class="word-card-related-group" style="padding:0; background:transparent;">
-          <div class="word-card-section-label" style="padding: 0 12px;">API 키 (로컬 저장)</div>
+          <div class="word-card-section-label" style="padding: 0 12px;">공용 AI</div>
           <div style="background:var(--bg-card); border:0.5px solid var(--border); border-radius:12px; display:flex; flex-direction:column;">
             
             <div style="padding:12px 16px;">
-              <label for="gemini-api-key" style="display:block; font-family:var(--font-sf); font-size:15px; font-weight:500; margin-bottom:6px;">Google Gemini</label>
-              <input type="password" id="gemini-api-key" class="text-input" placeholder="AIzaSy..." style="border:none; background:transparent; padding:0; font-size:17px; box-shadow:none;">
+              <div style="font-weight:500;">AI 채점 · 학습 리포트</div>
+              <p style="font-size:13px; color:var(--text-secondary); margin-top:6px;">관리자가 설정한 공용 AI를 사용합니다. 개인 API 키를 입력할 필요가 없습니다.</p>
             </div>
           </div>
           <p style="font-size:13px; color:var(--text-muted); margin: 6px 12px 0; line-height:1.4;">
-            Gemini API는 주관식 이의제기(AI 채점)에 사용됩니다. 설정은 기기에만 안전하게 저장됩니다.
+            AI 기능을 실행하면 학습 내용과 답안이 분석을 위해 AI 서비스로 전송됩니다. 계정별 사용 한도가 적용됩니다.
           </p>
         </div>
 
@@ -738,7 +739,7 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
   <!-- Privacy Policy Modal -->
   <div id="privacy-modal" class="modal-screen hidden" role="dialog" aria-modal="true" style="z-index: 10002;">
     <div class="modal-screen-content" style="max-width:500px;">
@@ -767,6 +768,6 @@
 
   <span style="font-family:'Pretendard'; opacity:0; pointer-events:none;">.</span>
   <span style="font-family:'Pretendard'; font-weight:700; opacity:0; pointer-events:none;">.</span>
-  <script type="module" src="app.js?v=desktop-dialogs1"></script>
+  <script type="module" src="app.js?v=security1"></script>
 </body>
 </html>

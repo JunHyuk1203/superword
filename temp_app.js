@@ -290,16 +290,8 @@ const settingsSaveBtn = $('settings-save-btn');
 const geminiApiKeyInput = $('gemini-api-key');
 
 // 湲곕낯 API ??珥덇린??(?ъ슜?먭? 蹂꾨룄濡??ㅼ젙?섏? ?딆? 寃쎌슦?먮쭔 ?곸슜)
-(function initDefaultApiKey() {
-  const saved = localStorage.getItem('gemini_api_key');
-  if (!saved) {
-    // ????議곌컖???⑹퀜???뚯뒪 ?ㅼ틪 ?고쉶
-    const p1 = 'AQ.Ab8RN6IIk745';
-    const p2 = 'Qc0MpDBd1_iZjq_bn9G9FUwRlAIlsXaVvVL9xw';
-    localStorage.setItem('gemini_api_key', p1 + p2);
-  }
-})();
-let geminiApiKey = localStorage.getItem('gemini_api_key') || '';
+// Shared default API credentials removed. Use a user-provided key only.
+let geminiApiKey = '';
 
 if (settingsBtn) {
   settingsBtn.addEventListener('click', () => {
@@ -313,7 +305,7 @@ if (settingsBtn) {
   settingsCloseBtn.addEventListener('click', () => closeModal(settingsModal));
   settingsSaveBtn.addEventListener('click', () => {
     geminiApiKey = geminiApiKeyInput.value.trim();
-    localStorage.setItem('gemini_api_key', geminiApiKey);
+    // Legacy snapshots must not persist credentials.
 
     closeModal(settingsModal);
     alert('?ㅼ젙????λ릺?덉뒿?덈떎.');

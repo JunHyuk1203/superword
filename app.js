@@ -27,10 +27,11 @@ window.setTheme = function(theme) {
 };
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js";
 import {
   getFirestore, collection, doc, setDoc, getDocs, addDoc,
   query, orderBy, serverTimestamp, deleteDoc, updateDoc,
-  onSnapshot, initializeFirestore, persistentLocalCache, where, writeBatch
+  onSnapshot, initializeFirestore, memoryLocalCache, where, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -51,13 +52,15 @@ const firebaseApp = initializeApp({
   measurementId: "G-Z0C9CQT4T7"
 });
 const db = initializeFirestore(firebaseApp, {
-  localCache: persistentLocalCache()
+  localCache: memoryLocalCache()
 });
 const auth = getAuth(firebaseApp);
+const callStudyAi = httpsCallable(getFunctions(firebaseApp, 'asia-northeast3'), 'studyAi', {timeout: 60000});
 setPersistence(auth, browserLocalPersistence);
 
 // ─── Global State ─────────────────────────────────────────────────────────────
 let currentUser = null;
+let authSessionVersion = 0;
 let unsubBooks = null;
 let unsubChapters = null;
 let unsubWords = null;
@@ -92,11 +95,14 @@ function highlightExample(enText, keyword) {
   }
 }
 
-function escapeHTML(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escapeHTML(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function escapeCSV(s) {
   if (s == null) return '';
-  const v = String(s).replace(/"/g, '""');
-  return (v.includes(',') || v.includes('\n') || v.includes('"')) ? `"${v}"` : v;
+  let value = String(s);
+  // CSV quoting alone does not prevent formulas when opened in a spreadsheet.
+  if (/^[\s\uFEFF]*[=+\-@]/.test(value) || /^[\t\r\n]/.test(value)) value = "'" + value;
+  const v = value.replace(/"/g, '""');
+  return /[,\r\n"]/.test(v) ? `"${v}"` : v;
 }
 
 const modalCloseTimers = new WeakMap();
@@ -348,38 +354,16 @@ const settingsBtn = $('settings-btn');
 const settingsModal = $('settings-modal');
 const settingsCloseBtn = $('settings-close-btn');
 const settingsSaveBtn = $('settings-save-btn');
-const geminiApiKeyInput = $('gemini-api-key');
-
-// 기본 API 키 초기화 (사용자가 별도로 설정하지 않은 경우에만 적용)
-(function initDefaultApiKey() {
-  const saved = localStorage.getItem('gemini_api_key');
-  if (!saved) {
-    // 키 두 조각을 합쳐서 소스 스캔 우회
-    const p1 = 'AQ.Ab8RN6IIk745';
-    const p2 = 'Qc0MpDBd1_iZjq_bn9G9FUwRlAIlsXaVvVL9xw';
-    localStorage.setItem('gemini_api_key', p1 + p2);
-  }
-})();
-let geminiApiKey = localStorage.getItem('gemini_api_key') || '';
-
+// Old client credentials are removed; the shared key is available only to the server.
+localStorage.removeItem('gemini_api_key');
+sessionStorage.removeItem('superword_ai_key');
 if (settingsBtn) {
   settingsBtn.addEventListener('click', () => {
-    geminiApiKeyInput.value = geminiApiKey;
-
-    // Sync theme buttons
-    const currentTheme = document.body.getAttribute('data-theme') || 'dark';
-    window.setTheme(currentTheme);
+    window.setTheme(document.body.getAttribute('data-theme') || 'dark');
     openModal(settingsModal);
   });
   settingsCloseBtn.addEventListener('click', () => closeModal(settingsModal));
-  settingsSaveBtn.addEventListener('click', () => {
-    geminiApiKey = geminiApiKeyInput.value.trim();
-    localStorage.setItem('gemini_api_key', geminiApiKey);
-
-    closeModal(settingsModal);
-    alert('설정이 저장되었습니다.');
-  });
-  
+  settingsSaveBtn.addEventListener('click', () => closeModal(settingsModal));
 }
 // duplicate declaration removed
 const startTestBtn = $('start-test-btn');
@@ -419,100 +403,23 @@ function renderSimpleMarkdown(text) {
 
 if (generateAiReportBtn) {
   generateAiReportBtn.addEventListener('click', async () => {
-    if (!geminiApiKey) {
-      alert("설정(⚙️) 메뉴에서 API 키를 먼저 등록해주세요.");
-      return;
-    }
-    if (!currentTestRecord) return;
-
+    if (!currentUser || !currentTestRecord || !selectedBookId || !selectedChapterId) return;
+    const requestSession = authSessionVersion;
     generateAiReportBtn.disabled = true;
-    generateAiReportBtn.innerHTML = '🤖 리포트 생성 중...';
+    generateAiReportBtn.textContent = '🤖 리포트 생성 중...';
     historyAiReportContainer.classList.remove('hidden');
-    historyAiReportContainer.innerHTML = '<div style="text-align:center; padding:1rem;"><div class="progress-spinner" style="margin:0 auto;"></div><div style="margin-top:10px;">AI가 학습 성취도를 분석하고 있습니다...</div></div>';
-
+    historyAiReportContainer.textContent = 'AI가 학습 성취도를 분석하고 있습니다...';
     try {
-      const chapterWords = currentLoadedWords;
-      const historySummary = chapterHistoryRecords.map(r => {
-        const pct = Math.round((r.correct / r.total) * 100) || 0;
-        const dStr = r.timestamp ? r.timestamp.toDate().toLocaleString() : '최근';
-        const wStr = r.wrongWords && r.wrongWords.length > 0 ? r.wrongWords.join(', ') : '없음';
-        return `- ${dStr} | 정답률: ${pct}% | 오답: ${wStr}`;
-      }).join('\n');
-      
-      const currentPct = Math.round((currentTestRecord.correct / currentTestRecord.total) * 100) || 0;
-      const currentWrong = currentTestRecord.wrongWords && currentTestRecord.wrongWords.length > 0 ? currentTestRecord.wrongWords.join(', ') : '없음';
-
-      const prompt = `당신은 친절하고 전문적인 어휘 학습 AI 튜터입니다.
-학생의 단어장 테스트 결과를 분석하여, 어떤 부분을 헷갈려 하는지, 어떤 부분이 부족한지, 앞으로 어떻게 학습해야 하는지 구체적이고 도움이 되는 1~2문단의 브리핑을 작성해주세요.
-마크다운 서식을 사용하여 깔끔하게 작성하되, 핵심만 요약해주세요.
-
-[현재 테스트 결과]
-- 정답률: ${currentPct}% (${currentTestRecord.correct} / ${currentTestRecord.total})
-- 틀린 단어: ${currentWrong}
-
-[이 단원의 이전 테스트 기록 (최근 순)]
-${historySummary}
-
-[이 단원의 전체 단어 목록 참고]
-${chapterWords.map(w => `${w.word} (${w.meaning})`).join(', ')}`;
-
-      let responseText = '';
-      const apiKey = geminiApiKey.trim();
-
-      if (apiKey.startsWith('sk-')) {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.7
-          })
-        });
-        if (!response.ok) throw new Error(`OpenAI API 오류: ${response.status}`);
-        const data = await response.json();
-        responseText = data.choices[0].message.content;
-      } else {
-        const modelsToTry = [
-          'gemini-3.1-flash-lite',
-          'gemini-2.5-flash-lite',
-          'gemini-3.5-flash',
-          'gemini-2.5-flash',
-          'gemini-3.1-pro-preview'
-        ];
-        let success = false;
-        for (const model of modelsToTry) {
-          console.log(`Trying Gemini API with model: ${model} for Report`);
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }]
-            })
-          });
-          if (response.ok) {
-            const data = await response.json();
-            if (data.candidates && data.candidates[0].content.parts[0].text) {
-              responseText = data.candidates[0].content.parts[0].text;
-              success = true;
-              break;
-            }
-          }
-        }
-        if (!success) throw new Error("Gemini API 호출에 실패했습니다.");
-      }
-
-      historyAiReportContainer.innerHTML = renderSimpleMarkdown(responseText);
-
-    } catch (e) {
-      console.error(e);
-      historyAiReportContainer.innerHTML = `<div style="color:var(--danger);">오류 발생: ${e.message}</div>`;
+      const result = await callStudyAi({action: 'report', bookId: selectedBookId, chapterId: selectedChapterId,
+        record: {correct: currentTestRecord.correct, total: currentTestRecord.total, wrongWords: currentTestRecord.wrongWords || []}});
+      if (requestSession !== authSessionVersion) return;
+      historyAiReportContainer.innerHTML = renderSimpleMarkdown(result.data.text || '');
+    } catch (error) {
+      if (requestSession !== authSessionVersion) return;
+      historyAiReportContainer.textContent = error.message || 'AI 리포트를 생성하지 못했습니다.';
     } finally {
       generateAiReportBtn.disabled = false;
-      generateAiReportBtn.innerHTML = '🤖 AI 학습 리포트 다시 생성';
+      generateAiReportBtn.textContent = '🤖 AI 학습 리포트 다시 생성';
     }
   });
 }
@@ -716,7 +623,7 @@ function loadBooks() {
       });
     }, (e) => {
       console.error(e);
-      viewBooks.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--danger);">오류: ${e.message}</p>`;
+      viewBooks.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--danger);">오류: ${escapeHTML(e.message)}</p>`;
     });
   }
 }
@@ -777,7 +684,7 @@ function loadChapters(bookId, bookName) {
       });
     }, (e) => {
       console.error(e);
-      viewChapters.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--danger);">오류: ${e.message}</p>`;
+      viewChapters.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--danger);">오류: ${escapeHTML(e.message)}</p>`;
     });
   }
 }
@@ -831,7 +738,7 @@ function loadWords(bookId, chapterId, chapterName) {
       updateHideToggleAvailability(allDocs);
     }, (e) => {
       console.error(e);
-      wordsCardView.innerHTML = `<p style="text-align:center;color:var(--danger);padding:2rem;">오류: ${e.message}</p>`;
+      wordsCardView.innerHTML = `<p style="text-align:center;color:var(--danger);padding:2rem;">오류: ${escapeHTML(e.message)}</p>`;
     });
   }
 }
@@ -1058,7 +965,7 @@ function renderTableView(docs) {
     const tr = document.createElement('tr');
     tr.className = 'list-item-enter';
     tr.style.animationDelay = `${idx * 0.02}s`;
-    tr.innerHTML = `<td><input type="checkbox" class="word-chk" data-path="${data._path}" /></td><td>${idx+1}</td><td style="font-weight:600;color:var(--primary-light);">${escapeHTML(data.front)}</td><td style="white-space:pre-wrap;font-size:0.82rem;color:var(--text-secondary);">${escapeHTML(data.back)}</td>
+    tr.innerHTML = `<td><input type="checkbox" class="word-chk" data-path="${escapeHTML(data._path)}" /></td><td>${idx+1}</td><td style="font-weight:600;color:var(--primary-light);">${escapeHTML(data.front)}</td><td style="white-space:pre-wrap;font-size:0.82rem;color:var(--text-secondary);">${escapeHTML(data.back)}</td>
       <td><div style="display:flex;gap:4px;">
         <button class="word-card-edit-btn" style="font-size:0.78rem;padding:4px 10px;">수정</button>
         <button class="word-card-delete-btn" style="font-size:0.78rem;padding:4px 10px;">삭제</button>
@@ -1914,14 +1821,17 @@ if (convertBtn) {
 
 // ─── Auto Save ────────────────────────────────────────────────────────────────
 async function autoSaveToLibrary(data) {
-  if (!selectedBookId || !selectedChapterId) {
+  if (!currentUser || !selectedBookId || !selectedChapterId) {
     alert('저장할 단원을 찾지 못했습니다. 단원(챕터) 안에서 추출해주세요.');
     return;
   }
+  const requestSession = authSessionVersion;
+  const wordsPath = `users/${currentUser.uid}/books/${selectedBookId}/chapters/${selectedChapterId}/words`;
   try {
     let maxOrder = currentLoadedWords.reduce((max, w) => Math.max(max, w.order || 0), -1);
     for (let i = 0; i < data.length; i++) {
-      const wordRef = doc(collection(db, `users/${currentUser.uid}/books/${selectedBookId}/chapters/${selectedChapterId}/words`));
+      if (requestSession !== authSessionVersion) return;
+      const wordRef = doc(collection(db, wordsPath));
       await setDoc(wordRef, { ...data[i], order: maxOrder + 1 + i });
       if (convertBtn) {
         const percent = Math.floor(((i + 1) / data.length) * 100);
@@ -2562,153 +2472,41 @@ if ($('short-dontknow-btn')) {
   });
 }
 
-// ─── AI Appeal (주관식 이의제기) ──────────────────────────────────────────────────
+// ─── AI Appeal (server-side shared credential) ────────────────────────────────
 if ($('short-appeal-btn')) {
   $('short-appeal-btn').addEventListener('click', async () => {
-    if (!geminiApiKey) {
-      alert("설정(⚙️) 메뉴에서 Gemini API 키를 먼저 등록해주세요.");
-      return;
-    }
+    if (!currentUser || !shortCurrentData || !selectedBookId || !selectedChapterId) return;
+    const requestSession = authSessionVersion;
     const appealBtn = $('short-appeal-btn');
     const input = $('short-answer-input');
-    const val = input.value.trim().toLowerCase();
-    if (!val) return;
-
-    const correctAnswers = shortCorrectAnswer.join(', ');
-    const targetWord = testDir === 'word2meaning' ? shortCurrentData.word : shortCurrentData.meaning;
-    
-    const originalText = appealBtn.innerHTML;
-    appealBtn.innerHTML = '🤖 채점 중...';
+    const answer = input.value.trim();
+    const wordId = shortCurrentData._path?.split('/').pop();
+    if (!answer || !wordId) return;
+    const originalText = appealBtn.textContent;
+    appealBtn.textContent = '🤖 채점 중...';
     appealBtn.disabled = true;
-
     try {
-      // 1. Check Firebase Cache
-      const appealsCol = collection(db, 'appeals');
-      const q = query(appealsCol, where("userAnswer", "==", val), where("targetWord", "==", targetWord));
-      const querySnapshot = await getDocs(q);
-      
-      let isApproved = false;
-      let fromCache = false;
-      
-      if (!querySnapshot.empty) {
-        // Cache Hit
-        isApproved = querySnapshot.docs[0].data().isApproved;
-        fromCache = true;
-        console.log('Appeals cache hit:', isApproved);
-      } else {
-        // Cache Miss -> Call Gemini
-        const apiKey = geminiApiKey.trim();
-        const prompt = `단어 '${targetWord}'의 정답은 원래 '${correctAnswers}' 입니다. 사용자가 주관식 정답으로 '${val}'을(를) 입력했습니다. 이 답변이 의미상 정답으로 인정될 수 있다면 오직 'true', 틀렸다면 'false'라고만 대답하세요.`;
-
-        if (apiKey.startsWith('sk-')) {
-          // Use OpenAI API
-          console.log('Using OpenAI API');
-          const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [{ role: 'user', content: prompt }],
-              temperature: 0.1
-            })
-          });
-
-          if (!response.ok) {
-            const errText = await response.text();
-            throw new Error(`OpenAI API 호출 실패 (${response.status})\n${errText}`);
-          }
-
-          const json = await response.json();
-          const text = json.choices[0].message.content.toLowerCase().trim();
-          isApproved = text.includes('true');
-
-        } else {
-          // Use Gemini API
-          console.log('Using Gemini API');
-          // Fallback sequence: cheapest/most available -> older generation -> pro (expensive)
-          let modelsToTry = [
-            'gemini-3.1-flash-lite', // Cheapest and most available 2026 tier
-            'gemini-2.5-flash-lite', // Legacy fallback (very cheap)
-            'gemini-3.5-flash',      // Current generation Flash
-            'gemini-2.5-flash',      // Legacy generation Flash
-            'gemini-3.1-pro-preview' // Pro tier (most expensive, last resort)
-          ];
-          
-          let response = null;
-          let currentModel = '';
-
-          for (const model of modelsToTry) {
-            currentModel = model;
-            console.log(`Trying Gemini API with model: ${currentModel}`);
-            response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
-              })
-            });
-
-            // If success (200 OK), break the loop and use this response
-            if (response.ok) {
-              break;
-            }
-            
-            // If it's a 404 (Not Found) or 503 (Unavailable), log it and let the loop try the next model
-            console.log(`${currentModel} returned ${response.status}. Trying next model...`);
-          }
-
-          if (!response || !response.ok) {
-            const errText = response ? await response.text() : 'No response';
-            console.error("Gemini API Error:", errText);
-            if (response && response.status === 503) {
-              throw new Error("현재 구글 AI 서버 전체에 사용자가 너무 많아 일시적으로 혼잡합니다 (503). 모든 모델 호출에 실패했습니다. 잠시 후 다시 시도해 주세요.");
-            } else {
-              throw new Error(`Gemini API 호출 실패 (${response ? response.status : 'Unknown'})\n${errText}`);
-            }
-          }
-          
-          const json = await response.json();
-          const text = json.candidates[0].content.parts[0].text.toLowerCase().trim();
-          isApproved = text.includes('true');
-        }
-        
-        // Save to Firebase Cache
-        await addDoc(appealsCol, {
-          targetWord,
-          correctAnswers,
-          userAnswer: val,
-          isApproved,
-          createdAt: serverTimestamp()
-        });
-      }
-
-      const prefix = fromCache ? "⚡ [이전 판단 기반]" : "🤖 [AI 새로운 판단]";
+      const result = await callStudyAi({action: 'appeal', bookId: selectedBookId, chapterId: selectedChapterId,
+        wordId, direction: testDir, userAnswer: answer});
+      if (requestSession !== authSessionVersion) return;
       const feedback = $('short-feedback');
-      
-      if (isApproved) {
-        // Mark as Correct
+      if (result.data.isApproved === true) {
         input.classList.remove('wrong');
         input.classList.add('correct');
         feedback.classList.remove('wrong-fb');
         feedback.classList.add('correct-fb');
-        feedback.innerHTML = `<span class="correct-label">${prefix} 정답으로 인정했습니다!</span><br>원래 답: ${escapeHTML(testDir === 'word2meaning' ? shortCurrentData.meaning : shortCurrentData.word)}`;
-        
-        testWrong = testWrong.filter(w => w !== shortCurrentData.word);
+        feedback.textContent = '🤖 정답으로 인정했습니다!';
+        testWrong = testWrong.filter(word => word !== shortCurrentData.word);
         testCorrect++;
-        appealBtn.classList.add('hidden');
       } else {
-        feedback.innerHTML += `<br><span style="color:var(--danger); font-size:0.95em; font-weight:600; display:inline-block; margin-top:8px;">${prefix} 오답 처리 유지 😢</span>`;
-        appealBtn.classList.add('hidden');
+        feedback.append(document.createTextNode(' 🤖 오답 처리를 유지합니다.'));
       }
-    } catch (err) {
-      console.error(err);
-      const feedback = $('short-feedback');
-      feedback.innerHTML += `<br><span style="color:var(--warning); font-size:0.9em; display:inline-block; margin-top:8px;">⚠️ 오류: ${err.message}</span>`;
+      appealBtn.classList.add('hidden');
+    } catch (error) {
+      if (requestSession !== authSessionVersion) return;
+      $('short-feedback').append(document.createTextNode(' ⚠️ ' + (error.message || 'AI 채점에 실패했습니다.')));
     } finally {
-      appealBtn.innerHTML = originalText;
+      appealBtn.textContent = originalText;
       appealBtn.disabled = false;
     }
   });
@@ -2744,7 +2542,7 @@ function showTestResult() {
   // Wrong words list
   const wrongList = $('result-wrong-list');
   if (testWrong.length > 0) {
-    wrongList.innerHTML = '<strong style="color:var(--danger);">틀린 단어:</strong><br>' + testWrong.join(', ');
+    wrongList.innerHTML = '<strong style="color:var(--danger);">틀린 단어:</strong><br>' + escapeHTML(testWrong.join(', '));
     $('result-retry-wrong-btn').classList.remove('hidden');
   } else {
     wrongList.innerHTML = '';
@@ -2768,7 +2566,8 @@ function showTestResult() {
 // ─── View Test History ────────────────────────────────────────────────────────
 if (viewHistoryBtn) {
   viewHistoryBtn.addEventListener('click', async () => {
-    if (!selectedBookId || !selectedChapterId) return;
+    if (!currentUser || !selectedBookId || !selectedChapterId) return;
+    const requestSession = authSessionVersion;
     
     historyList.innerHTML = '<p style="text-align:center; color:var(--text-muted); padding:2rem;">기록 불러오는 중...</p>';
     openModal(historyModal);
@@ -2779,6 +2578,7 @@ if (viewHistoryBtn) {
         orderBy('timestamp', 'desc')
       );
       const snap = await getDocs(q);
+      if (requestSession !== authSessionVersion) return;
       
       historyList.innerHTML = '';
       chapterHistoryRecords = [];
@@ -2800,14 +2600,14 @@ if (viewHistoryBtn) {
           <div class="history-summary">
             <div class="history-header">
               <span class="history-title">${modeLabel} <span style="font-size:0.8rem; font-weight:normal; color:var(--text-muted);">(${data.dir === 'word2meaning' ? '단어→뜻' : '뜻→단어'})</span></span>
-              <span class="history-date">${dateStr}</span>
+              <span class="history-date">${escapeHTML(dateStr)}</span>
             </div>
           </div>
         `;
         item.onclick = () => {
           historyDetailTitle.innerHTML = `${modeLabel} <span style="font-size:0.8rem; font-weight:normal; color:var(--text-muted);">(${data.dir === 'word2meaning' ? '단어→뜻' : '뜻→단어'})</span>`;
           historyDetailDate.textContent = dateStr;
-          historyDetailScore.innerHTML = `${data.correct} / ${data.total} 정답 <span style="color:${pct >= 80 ? 'var(--success)' : pct >= 50 ? 'var(--primary-light)' : 'var(--danger)'}">(${pct}%)</span>`;
+          historyDetailScore.innerHTML = `${escapeHTML(data.correct)} / ${escapeHTML(data.total)} 정답 <span style="color:${pct >= 80 ? 'var(--success)' : pct >= 50 ? 'var(--primary-light)' : 'var(--danger)'}">(${pct}%)</span>`;
           
           if (data.wrongWords && data.wrongWords.length > 0) {
             historyDetailWrong.innerHTML = `<strong>틀린 단어:</strong><br/>${escapeHTML(data.wrongWords.join(', '))}`;
@@ -2825,7 +2625,9 @@ if (viewHistoryBtn) {
       });
     } catch (e) {
       console.error(e);
-      historyList.innerHTML = `<p style="text-align:center; color:var(--danger); padding:2rem;">오류: ${e.message}</p>`;
+      if (requestSession === authSessionVersion) {
+        historyList.innerHTML = `<p style="text-align:center; color:var(--danger); padding:2rem;">오류: ${escapeHTML(e.message)}</p>`;
+      }
     }
   });
 }
@@ -2960,7 +2762,7 @@ if (authForm) {
   authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = authEmail.value.trim();
-    const password = authPassword.value.trim();
+    const password = authPassword.value;
     hideAuthError();
     
     try {
@@ -3078,8 +2880,13 @@ if (linkGoogleBtn) {
   });
 }
 
-onAuthStateChanged(auth, (user) => {
-  if (user) {
+function handleAuthStateChanged(user) {
+  authSessionVersion++;
+  // The observer runs before the login submit handler checks verification.
+  if (user && user.emailVerified) {
+    const nextUserId = user.email === 'tntgame1203@gmail.com' ? 'default_user' : user.uid;
+    // Account replacement can happen without an intermediate signed-out event.
+    if (currentUser && currentUser.uid !== nextUserId) handleAuthStateChanged(null);
     if (user.email === 'tntgame1203@gmail.com') {
       currentUser = { uid: "default_user", email: user.email };
     } else {
@@ -3131,6 +2938,37 @@ onAuthStateChanged(auth, (user) => {
     loadBooks();
   } else {
     currentUser = null;
+    sessionStorage.removeItem('superword_ai_key');
+    currentLoadedWords = [];
+    generatedData = [];
+    testWords = [];
+    testWrong = [];
+    swipeWords = [];
+    chapterHistoryRecords = [];
+    currentTestRecord = null;
+    selectedBookId = null;
+    selectedChapterId = null;
+    currentBookNameStore = '';
+    currentEditDocRef = null;
+    shortCurrentData = null;
+    testIndex = 0;
+    testCorrect = 0;
+    [viewBooks, viewChapters, wordsCardView, wordsEditView, wordsSwipeView,
+      wordsTbody, historyList, historyDetailTitle, historyDetailDate,
+      historyDetailScore, historyDetailWrong, historyAiReportContainer].forEach(el => el?.replaceChildren());
+    ['flashcard-front', 'flashcard-back', 'quiz-question-word', 'quiz-choices',
+      'quiz-feedback', 'short-question-word', 'short-feedback', 'trace-feedback',
+      'result-desc', 'result-wrong-list', 'test-word-count-info', 'settings-user-email']
+      .forEach(id => $(id)?.replaceChildren());
+    document.querySelectorAll('#edit-word-modal input, #edit-word-modal textarea, #ai-json-input, #short-answer-input, #auth-password')
+      .forEach(input => { input.value = ''; });
+    document.querySelectorAll('#test-modal canvas').forEach(canvas => {
+      canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+    });
+    document.querySelectorAll('.modal-overlay').forEach(modal => modal.classList.add('hidden'));
+    document.querySelectorAll('.modal-screen').forEach(modal => closeModal(modal));
+    setLibraryLevel(0);
+    if (_ttsAudio) { _ttsAudio.pause(); _ttsAudio = null; }
     if (landingScreen) landingScreen.classList.remove('hidden');
     if (authScreen) authScreen.classList.add('hidden');
     if (libraryContent) libraryContent.classList.add('hidden');
@@ -3139,7 +2977,8 @@ onAuthStateChanged(auth, (user) => {
     if (typeof unsubChapters !== "undefined" && unsubChapters) { unsubChapters(); unsubChapters = null; }
     if (typeof unsubWords !== "undefined" && unsubWords) { unsubWords(); unsubWords = null; }
   }
-});
+}
+onAuthStateChanged(auth, handleAuthStateChanged);
 
 fetchLatestVersion();
 

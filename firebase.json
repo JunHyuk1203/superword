@@ -1,0 +1,14 @@
+{
+  "functions": [{ "source": "functions", "codebase": "superword-ai", "runtime": "nodejs22", "ignore": ["node_modules", "test", "*.log"] }],
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    }
+  }
+}
