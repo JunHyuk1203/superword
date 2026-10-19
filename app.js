@@ -411,10 +411,17 @@ function animateLibraryNavigation(direction) {
   };
   if (!returning) slideIn(iosLargeTitleText.querySelector('.ios-title-label'));
   if (backVisible && !advancing) slideIn(iosBackText);
-  // A cancelled or superseded transition must never leave a label concealed.
-  libraryNavRevealTimer = setTimeout(() => {
-    if (epoch === libraryNavEpoch) clearLibraryNavigationMotion();
-  }, timing.duration + 80);
+  // WebView's compositor can start late or pause while JS timers keep ticking.
+  // A wall-clock deadline must not replace a label before its actual arrival.
+  const clearWhenSettled = () => {
+    if (epoch !== libraryNavEpoch) return;
+    const inFlight = libraryNavAnimations.some(animation =>
+      animation.pending || animation.playState === 'running' || animation.playState === 'paused');
+    if (!document.hidden && inFlight) {
+      libraryNavRevealTimer = setTimeout(clearWhenSettled, 200);
+    } else clearLibraryNavigationMotion();
+  };
+  libraryNavRevealTimer = setTimeout(clearWhenSettled, timing.duration + 80);
   if (!returning && !advancing) return;
   const from = returning ? libraryNavSnapshot.backBounds : libraryNavSnapshot.titleBounds;
   const destination = returning ? iosLargeTitleText : iosBackText;

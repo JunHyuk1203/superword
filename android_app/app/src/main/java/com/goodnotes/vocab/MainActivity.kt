@@ -29,6 +29,11 @@ class MainActivity : AppCompatActivity() {
         val webSettings: WebSettings = webView.settings
         webSettings.javaScriptEnabled = true
         webSettings.domStorageEnabled = true  // Required for Firebase and LocalStorage
+        // Use CSS viewport/font metrics consistently for animated and resting text.
+        webSettings.useWideViewPort = true
+        webSettings.loadWithOverviewMode = false
+        webSettings.layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
+        webSettings.textZoom = 100
         webSettings.databaseEnabled = true
         webSettings.mediaPlaybackRequiresUserGesture = false  // Allow auto TTS/audio
         webSettings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
@@ -66,7 +71,8 @@ class MainActivity : AppCompatActivity() {
         webView.settings.domStorageEnabled = true
         
         // Load the GitHub Pages URL
-        webView.loadUrl("https://junhyuk1203.github.io/superword/")
+        // Revalidate the entry HTML on launch; its versioned assets remain cached.
+        webView.loadUrl("https://junhyuk1203.github.io/superword/", mapOf("Cache-Control" to "no-cache"))
     }
 
     private fun isAppUrl(uri: Uri): Boolean {
