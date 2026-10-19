@@ -33,7 +33,10 @@ async function main() {
   const browser = await chromium.launch({headless: true,
     executablePath: process.env.UI_TEST_BROWSER || 'C:/Program Files/Google/Chrome/Application/chrome.exe'});
   try {
-    const page = await browser.newPage();
+    const page = await browser.newPage(process.env.UI_TEST_ANDROID ? {
+      viewport:{width:390,height:900}, deviceScaleFactor:3, isMobile:true, hasTouch:true,
+      userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/AP2A.240905.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Mobile Safari/537.36'
+    } : {});
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', async route => {
@@ -392,6 +395,19 @@ async function main() {
       await page.waitForTimeout(240);
       assert.equal(await page.locator('#ios-large-title-text').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'Destination current title waits for transfer arrival');
       assert.equal(await page.locator('.library-nav-ghost').isVisible(), true);
+      const mobileFont = await page.evaluate(() => {
+        const ghost = document.querySelector('.library-nav-ghost'), title = document.querySelector('#ios-large-title-text');
+        const frames = ghost.getAnimations()[0].effect.getKeyframes();
+        const end = new DOMMatrix(frames.at(-1).transform);
+        return {font:getComputedStyle(ghost).fontSize, targetFont:getComputedStyle(title).fontSize,
+          autoSize:getComputedStyle(ghost).webkitTextSizeAdjust, targetAutoSize:getComputedStyle(title).webkitTextSizeAdjust,
+          animatedFont:frames.some(frame => frame.fontSize !== undefined), scaleX:end.a, scaleY:end.d};
+      });
+      assert.equal(mobileFont.font, mobileFont.targetFont, 'Transfer uses destination font size from its first frame');
+      assert.equal(mobileFont.autoSize, mobileFont.targetAutoSize, 'Same text autosizing policy inside and outside toolbar');
+      assert.equal(mobileFont.animatedFont, false, 'No WebView font-size interpolation');
+      assert.equal(mobileFont.scaleX, 1);
+      assert.equal(mobileFont.scaleY, 1);
       const handoff = await page.evaluate(async () => {
         let last = null;
         const start = performance.now();

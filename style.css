@@ -214,6 +214,10 @@ body[data-theme="light"] .bg-orb { opacity: 0.12; }
   margin: 0 auto;
   padding: 0 16px;
 }
+.ios-nav-bar, .library-nav-ghost, .library-nav-exit {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 .library-nav-ghost {
   position: fixed;
   z-index: 250;

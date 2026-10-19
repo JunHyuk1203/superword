@@ -350,11 +350,20 @@ function libraryTransferKeyframes(from, returning) {
   const destination = returning ? iosLargeTitleText : iosBackText;
   const to = destination.getBoundingClientRect();
   const style = getComputedStyle(destination);
+  // Render with the destination's final font throughout. Android WebView may
+  // autosize/re-rasterize interpolated font sizes differently from resting text.
+  Object.assign(libraryNavGhost.style, Object.fromEntries([
+    'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontStretch',
+    'fontFeatureSettings', 'fontVariationSettings', 'fontKerning', 'fontOpticalSizing',
+    'letterSpacing', 'wordSpacing', 'lineHeight', 'textTransform', 'textRendering'
+  ].map(key => [key, style[key]])));
+  libraryNavGhost.style.width = `${to.width}px`;
+  const scale = to.height > 0 ? from.height / to.height : 1;
+  const clippedRight = Math.max(0, to.width - from.width / Math.max(scale, 0.01));
   return [
-    { transform: 'translate(0, 0)' },
-    { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px)`, width: `${to.width}px`,
-      fontSize: style.fontSize, fontWeight: style.fontWeight, letterSpacing: style.letterSpacing,
-      lineHeight: style.lineHeight, color: style.color }
+    { transform: `translate(0, 0) scale(${scale})`, clipPath: `inset(0px ${clippedRight}px 0px 0px)` },
+    { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(1)`,
+      clipPath: 'inset(0px 0px 0px 0px)', color: style.color }
   ];
 }
 function animateLibraryNavigation(direction) {
@@ -416,8 +425,6 @@ function animateLibraryNavigation(direction) {
   ghost.textContent = returning ? libraryNavSnapshot.backText : libraryNavSnapshot.titleText;
   Object.assign(ghost.style, {
     left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`,
-    fontSize: returning ? '17px' : libraryNavSnapshot.titleFontSize,
-    fontFamily: getComputedStyle(destination).fontFamily,
     color: returning ? 'var(--primary)' : 'var(--text)'
   });
   document.body.appendChild(ghost);
