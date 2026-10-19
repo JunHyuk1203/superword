@@ -287,6 +287,7 @@ const layerWords = $('layer-words');
 let currentLibraryLevel = 0; // 0: Books, 1: Chapters, 2: Words
 
 function setLibraryLevel(newIndex) {
+  const previousIndex = currentLibraryLevel;
   currentLibraryLevel = newIndex;
   const inWords = newIndex === 2;
   document.body.dataset.libraryLevel = String(newIndex);
@@ -308,21 +309,197 @@ function setLibraryLevel(newIndex) {
       v.classList.add('active-lib');
     }
   });
+  if (previousIndex !== newIndex) pendingLibraryNavDirection = newIndex > previousIndex ? 1 : -1;
 }
 const iosBackBtn = $('ios-back-btn');
 const iosBackText = $('ios-back-text');
 const iosNavTitleInline = $('ios-nav-title-inline');
 const iosLargeTitleText = $('ios-large-title-text');
 
-// Scroll behavior for Apple Large Title
-document.addEventListener('scroll', () => {
-  const scrollY = window.scrollY;
-  if (scrollY > 44) {
-    if (iosNavTitleInline) iosNavTitleInline.classList.add('visible');
-  } else {
-    if (iosNavTitleInline) iosNavTitleInline.classList.remove('visible');
+// Move the actual title into the inline slot: never show two copies.
+const iosNavBar = document.querySelector('.ios-nav-bar');
+let navFrame = 0;
+let libraryNavAnimations = [];
+let libraryNavGhost = null;
+let libraryNavExit = null;
+let libraryNavSnapshot = null;
+let pendingLibraryNavDirection = 0;
+let libraryNavEpoch = 0;
+let libraryNavRevealTimer = null;
+let libraryNavTransfer = null;
+function clearLibraryNavigationMotion() {
+  libraryNavEpoch++;
+  clearTimeout(libraryNavRevealTimer);
+  libraryNavAnimations.forEach(animation => { animation.onfinish = null; animation.cancel(); });
+  libraryNavAnimations = [];
+  libraryNavGhost?.remove();
+  libraryNavGhost = null;
+  libraryNavExit?.remove();
+  libraryNavExit = null;
+  libraryNavTransfer = null;
+  [iosBackText, iosLargeTitleText].forEach(label => label.classList.remove('library-nav-pending'));
+}
+function setLibraryTitle(title) {
+  iosNavTitleInline.textContent = title;
+  const label = document.createElement('span');
+  label.className = 'ios-title-label';
+  label.textContent = title;
+  iosLargeTitleText.replaceChildren(label);
+}
+function libraryTransferKeyframes(from, returning) {
+  const destination = returning ? iosLargeTitleText : iosBackText;
+  const to = destination.getBoundingClientRect();
+  const style = getComputedStyle(destination);
+  return [
+    { transform: 'translate(0, 0)' },
+    { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px)`, width: `${to.width}px`,
+      fontSize: style.fontSize, fontWeight: style.fontWeight, letterSpacing: style.letterSpacing,
+      lineHeight: style.lineHeight, color: style.color }
+  ];
+}
+function animateLibraryNavigation(direction) {
+  if (!iosNavBar || !currentUser || !iosNavBar.getClientRects().length || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const timing = { duration: 520, easing: 'cubic-bezier(0.32, 0, 0.2, 1)' };
+  const epoch = libraryNavEpoch;
+  const returning = direction < 0 && libraryNavSnapshot?.backVisible;
+  const backVisible = iosBackBtn.style.visibility !== 'hidden';
+  const advancing = direction > 0 && backVisible && libraryNavSnapshot?.titleText === iosBackText.textContent;
+  // The title reused as a back label already has its own transfer animation.
+  // Otherwise retain the outgoing title in a clipped layer until it slides away.
+  if (!advancing && libraryNavSnapshot?.titleBounds.width > 0) {
+    const from = libraryNavSnapshot.titleBounds;
+    const bar = iosNavBar.getBoundingClientRect();
+    const barStyle = getComputedStyle(iosNavBar);
+    const exit = document.createElement('span');
+    exit.className = 'library-nav-exit';
+    exit.setAttribute('aria-hidden', 'true');
+    Object.assign(exit.style, {
+      left: `${from.left - bar.left - parseFloat(barStyle.borderLeftWidth)}px`,
+      top: `${from.top - bar.top - parseFloat(barStyle.borderTopWidth)}px`,
+      width: `${from.width}px`, height: `${from.height}px`
+    });
+    const label = document.createElement('span');
+    label.textContent = libraryNavSnapshot.titleText;
+    Object.assign(label.style, libraryNavSnapshot.titleStyle);
+    exit.appendChild(label);
+    iosNavBar.appendChild(exit);
+    libraryNavExit = exit;
+    const departure = label.animate([
+      { translate: '0 0' },
+      { translate: libraryNavSnapshot.compact ? '0 -100%' : '-100% 0' }
+    ], timing);
+    departure.onfinish = () => {
+      exit.remove();
+      if (libraryNavExit === exit) libraryNavExit = null;
+      departure.cancel();
+    };
+    libraryNavAnimations.push(departure);
   }
-}, { passive: true });
+  const slideIn = label => {
+    const animation = label.animate([{ translate: '-100% 0' }, { translate: '0 0' }], timing);
+    animation.onfinish = () => animation.cancel();
+    libraryNavAnimations.push(animation);
+  };
+  if (!returning) slideIn(iosLargeTitleText.querySelector('.ios-title-label'));
+  if (backVisible && !advancing) slideIn(iosBackText);
+  // A cancelled or superseded transition must never leave a label concealed.
+  libraryNavRevealTimer = setTimeout(() => {
+    if (epoch === libraryNavEpoch) clearLibraryNavigationMotion();
+  }, timing.duration + 80);
+  if (!returning && !advancing) return;
+  const from = returning ? libraryNavSnapshot.backBounds : libraryNavSnapshot.titleBounds;
+  const destination = returning ? iosLargeTitleText : iosBackText;
+  destination.classList.add('library-nav-pending');
+  const ghost = document.createElement('span');
+  ghost.className = 'library-nav-ghost';
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.textContent = returning ? libraryNavSnapshot.backText : libraryNavSnapshot.titleText;
+  Object.assign(ghost.style, {
+    left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`,
+    fontSize: returning ? '17px' : libraryNavSnapshot.titleFontSize,
+    fontFamily: getComputedStyle(destination).fontFamily,
+    color: returning ? 'var(--primary)' : 'var(--text)'
+  });
+  document.body.appendChild(ghost);
+  libraryNavGhost = ghost;
+  const movement = ghost.animate(libraryTransferKeyframes(from, returning), timing);
+  movement.onfinish = () => {
+    if (epoch === libraryNavEpoch) destination.classList.remove('library-nav-pending');
+    if (libraryNavTransfer?.movement === movement) libraryNavTransfer = null;
+    ghost.remove();
+    movement.cancel();
+  };
+  libraryNavAnimations.push(movement);
+  libraryNavTransfer = { movement, from, returning };
+}
+function positionLibraryTitle() {
+  navFrame = 0;
+  if (!iosNavBar || !iosLargeTitleText || !iosNavTitleInline) return;
+  const shorts = currentLibraryLevel === 2 && currentViewMode === 'swipe';
+  // Shorts always uses the compact header; other views retain scroll hysteresis.
+  if (shorts || window.scrollY > 96) iosNavBar.classList.add('compact');
+  else if (window.scrollY < 16) iosNavBar.classList.remove('compact');
+  const compact = iosNavBar.classList.contains('compact');
+  const target = (compact ? iosNavTitleInline : document.querySelector('.ios-title-slot')).getBoundingClientRect();
+  const origin = document.querySelector('.ios-nav-bar-inner').getBoundingClientRect();
+  iosLargeTitleText.style.transform = `translate(${target.left - origin.left}px, ${target.top - origin.top}px)`;
+  iosLargeTitleText.style.width = `${target.width}px`;
+  if (libraryNavTransfer) {
+    const { movement, from, returning } = libraryNavTransfer;
+    movement.effect.setKeyframes(libraryTransferKeyframes(from, returning));
+  }
+  if (pendingLibraryNavDirection) {
+    const direction = pendingLibraryNavDirection;
+    pendingLibraryNavDirection = 0;
+    animateLibraryNavigation(direction);
+  }
+  if (shorts) adjustSwipeViewHeight();
+}
+function scheduleLibraryTitle() {
+  if (!navFrame) navFrame = requestAnimationFrame(positionLibraryTitle);
+}
+function resetLibraryNavigation() {
+  clearLibraryNavigationMotion();
+  pendingLibraryNavDirection = 0;
+  const titleStyle = getComputedStyle(iosLargeTitleText);
+  libraryNavSnapshot = {
+    compact: iosNavBar.classList.contains('compact'),
+    backVisible: iosBackBtn.style.visibility !== 'hidden',
+    backText: iosBackText.textContent,
+    titleText: iosLargeTitleText.textContent,
+    backBounds: iosBackText.parentElement.getBoundingClientRect().toJSON(),
+    titleBounds: iosLargeTitleText.getBoundingClientRect().toJSON(),
+    titleFontSize: titleStyle.fontSize,
+    titleStyle: Object.fromEntries(['fontFamily', 'fontSize', 'fontWeight', 'letterSpacing', 'lineHeight', 'color'].map(key => [key, titleStyle[key]]))
+  };
+  // Each screen owns its listener. Re-entering must create a fresh subscription,
+  // even after a failed or cancelled initial snapshot.
+  if (unsubBooks) { unsubBooks(); unsubBooks = null; }
+  if (unsubChapters) { unsubChapters(); unsubChapters = null; }
+  if (unsubWords) { unsubWords(); unsubWords = null; }
+  iosNavBar?.classList.remove('compact');
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  scheduleLibraryTitle();
+}
+document.addEventListener('scroll', scheduleLibraryTitle, { passive: true });
+window.addEventListener('resize', scheduleLibraryTitle);
+new ResizeObserver(() => {
+  const inner = document.querySelector('.ios-nav-bar-inner');
+  const contentHeight = inner.getBoundingClientRect().height;
+  if (contentHeight > 0) {
+    const style = getComputedStyle(iosNavBar);
+    const height = contentHeight + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    // Keep a numeric target so changes caused by hidden actions, wrapping and
+    // compact titles can all transition from the currently displayed height.
+    iosNavBar.style.height = `${height}px`;
+  }
+  scheduleLibraryTitle();
+}).observe(document.querySelector('.ios-nav-bar-inner'));
+// Shorts must follow the animated outer edge, including the final settling frames.
+new ResizeObserver(scheduleLibraryTitle).observe(iosNavBar);
+new ResizeObserver(() => {
+  if (currentLibraryLevel === 2 && currentViewMode === 'swipe') adjustSwipeViewHeight();
+}).observe($('hide-toggle-bar'));
 const addBookBtn = $('add-book-btn');
 const addBookWrap = $('add-book-wrap');
 const addChapterBtn = $('add-chapter-btn');
@@ -537,8 +714,17 @@ if (iosBackBtn) {
 // --- Swipe to Go Back (iOS style edge swipe) ---
 let backSwipeStartX = null;
 let backSwipeStartY = null;
+let backSwipeHorizontal = false;
+// Extend the former atan(1/2) cone by 30 degrees above and below horizontal.
+const backSwipeMaxSlope = Math.tan(Math.atan(0.5) + Math.PI / 6);
+function cancelBackSwipe() {
+  backSwipeStartX = null;
+  backSwipeStartY = null;
+  backSwipeHorizontal = false;
+}
 
 document.addEventListener('touchstart', (e) => {
+  cancelBackSwipe();
   // Block back-swipe when a modal or test is open
   if (document.body.classList.contains('modal-open')) return;
   if (document.body.classList.contains('test-open')) return;
@@ -551,33 +737,44 @@ document.addEventListener('touchstart', (e) => {
 
 document.addEventListener('touchmove', (e) => {
   if (backSwipeStartX === null) return;
-  if (document.body.classList.contains('modal-open')) { backSwipeStartX = null; return; }
-  if (document.body.classList.contains('test-open')) { backSwipeStartX = null; return; }
+  if (e.touches.length !== 1 || document.body.classList.contains('modal-open') || document.body.classList.contains('test-open')) {
+    cancelBackSwipe();
+    return;
+  }
   const deltaX = e.touches[0].clientX - backSwipeStartX;
   const deltaY = Math.abs(e.touches[0].clientY - backSwipeStartY);
-  // Cancel if vertical scroll is dominant
-  if (deltaY > 50 && deltaX < 50) {
-    backSwipeStartX = null;
+  if (Math.max(Math.abs(deltaX), deltaY) < 10) return;
+  // Once a scroll/diagonal gesture is detected, it cannot turn into Back later.
+  if (deltaX < 0 || deltaY > Math.abs(deltaX) * backSwipeMaxSlope) {
+    cancelBackSwipe();
+    return;
   }
+  if (deltaX > 0 && deltaY <= deltaX * backSwipeMaxSlope) backSwipeHorizontal = true;
 }, { passive: true });
 
 document.addEventListener('touchend', (e) => {
   if (backSwipeStartX === null) return;
-  if (document.body.classList.contains('modal-open')) { backSwipeStartX = null; return; }
-  if (document.body.classList.contains('test-open')) { backSwipeStartX = null; return; }
+  if (!e.changedTouches.length || document.body.classList.contains('modal-open') || document.body.classList.contains('test-open')) {
+    cancelBackSwipe();
+    return;
+  }
   const deltaX = e.changedTouches[0].clientX - backSwipeStartX;
-  if (deltaX > 80) {
+  const deltaY = Math.abs(e.changedTouches[0].clientY - backSwipeStartY);
+  const goBack = backSwipeHorizontal && deltaX > 80 && deltaY <= deltaX * backSwipeMaxSlope;
+  cancelBackSwipe();
+  if (goBack) {
     if (currentLibraryLevel === 2 && selectedBookId) {
       loadChapters(selectedBookId, currentBookNameStore);
     } else if (currentLibraryLevel === 1) {
       loadBooks();
     }
   }
-  backSwipeStartX = null;
 });
+document.addEventListener('touchcancel', cancelBackSwipe, { passive: true });
 
 // ─── Load Books ───────────────────────────────────────────────────────────────
 function loadBooks() {
+  resetLibraryNavigation();
   if (typeof pushHistoryState === 'function') pushHistoryState(0, {});
   if (unsubChapters) { unsubChapters(); unsubChapters = null; }
   if (unsubWords) { unsubWords(); unsubWords = null; }
@@ -589,8 +786,7 @@ function loadBooks() {
   document.getElementById('words-action-wrapper')?.classList.add('hidden');
   
   if (iosBackBtn) iosBackBtn.style.visibility = 'hidden';
-  if (iosNavTitleInline) iosNavTitleInline.textContent = '단어장 목록';
-  if (iosLargeTitleText) iosLargeTitleText.textContent = '단어장 목록';
+  setLibraryTitle('단어장 목록');
 
   
   hideToggleBar.classList.add('hidden');
@@ -630,6 +826,7 @@ function loadBooks() {
 
 // ─── Load Chapters ────────────────────────────────────────────────────────────
 function loadChapters(bookId, bookName) {
+  resetLibraryNavigation();
   if (typeof pushHistoryState === 'function') pushHistoryState(1, { bookId: bookId, bookName: bookName });
   if (unsubWords) { unsubWords(); unsubWords = null; }
   if (unsubChapters && selectedBookId !== bookId) {
@@ -646,10 +843,9 @@ function loadChapters(bookId, bookName) {
   
   if (iosBackBtn) {
     iosBackBtn.style.visibility = 'visible';
-    iosBackText.textContent = '목록';
+    iosBackText.textContent = '단어장 목록';
   }
-  if (iosNavTitleInline) iosNavTitleInline.textContent = bookName;
-  if (iosLargeTitleText) iosLargeTitleText.textContent = bookName;
+  setLibraryTitle(bookName);
 
 
   if (!unsubChapters) {
@@ -691,6 +887,10 @@ function loadChapters(bookId, bookName) {
 
 // ─── Load Words ───────────────────────────────────────────────────────────────
 function loadWords(bookId, chapterId, chapterName) {
+  resetLibraryNavigation();
+  currentLoadedWords = [];
+  wordsEditView.replaceChildren();
+  wordsSwipeView.replaceChildren();
   if (typeof pushHistoryState === 'function') pushHistoryState(2, { bookId: bookId, chapterId: chapterId, chapterName: chapterName });
   if (unsubWords && selectedChapterId !== chapterId) {
     unsubWords();
@@ -707,8 +907,7 @@ function loadWords(bookId, chapterId, chapterName) {
     iosBackBtn.style.visibility = 'visible';
     iosBackText.textContent = currentBookNameStore || '단원';
   }
-  if (iosNavTitleInline) iosNavTitleInline.textContent = chapterName;
-  if (iosLargeTitleText) iosLargeTitleText.textContent = chapterName;
+  setLibraryTitle(chapterName);
 
 
   // Show hide bar and reset to card mode
@@ -1054,6 +1253,11 @@ editWordSave.addEventListener('click', async () => {
 function setViewMode(mode) {
   const oldMode = currentViewMode;
   currentViewMode = mode;
+  const shortsControls = document.querySelector('.shorts-controls');
+  if (shortsControls) {
+    shortsControls.inert = mode !== 'swipe';
+    shortsControls.setAttribute('aria-hidden', String(mode !== 'swipe'));
+  }
   
   // Reset all buttons
   [viewCardBtn, viewSwipeBtn].forEach(b => b?.classList.remove('active'));
@@ -1124,6 +1328,7 @@ function setViewMode(mode) {
     // Show in both card and swipe modes
     hideToggleBar.classList.add('active-view');
   }
+  scheduleLibraryTitle();
 }
 
 viewCardBtn.addEventListener('click', () => setViewMode('card'));
@@ -1136,8 +1341,9 @@ function adjustSwipeViewHeight() {
   if (!swipeView) return;
   const vph = window.visualViewport ? window.visualViewport.height : window.innerHeight;
   const rect = swipeView.getBoundingClientRect();
-  const available = vph - rect.top;
-  swipeView.style.height = Math.max(available, 200) + 'px';
+  const barTop = hideToggleBar.getBoundingClientRect().top;
+  const bottom = hideToggleBar.classList.contains('hidden') ? vph - 16 : Math.min(vph, barTop) - 14;
+  swipeView.style.height = Math.max(bottom - rect.top, 120) + 'px';
   fitSwipeCard();
 }
 
@@ -1318,9 +1524,10 @@ wordsSwipeView.addEventListener('click', handlePeekClick);
 
 function navigateSwipe(dir) { // dir: 1 = next (swipe up), -1 = prev (swipe down)
   const wrap = document.getElementById('swipe-wrap');
-  if (!wrap) return;
+  if (!wrap || wrap.dataset.animating === 'true') return;
   const newIdx = swipeIndex + dir;
   if (newIdx < 0 || newIdx >= swipeWords.length) return;
+  wrap.dataset.animating = 'true';
 
   const outClass = dir === 1 ? 'slide-out-top' : 'slide-out-bottom';
   const inClass = dir === 1 ? 'slide-from-bottom' : 'slide-from-top';
@@ -1329,6 +1536,10 @@ function navigateSwipe(dir) { // dir: 1 = next (swipe up), -1 = prev (swipe down
   wrap.classList.add(outClass);
 
   setTimeout(() => {
+    if (!wrap.isConnected || currentViewMode !== 'swipe' || currentLibraryLevel !== 2) {
+      delete wrap.dataset.animating;
+      return;
+    }
     swipeIndex = newIdx;
     renderSwipeCard(swipeIndex);
     
@@ -1344,12 +1555,16 @@ function navigateSwipe(dir) { // dir: 1 = next (swipe up), -1 = prev (swipe down
     wrap.style.transition = '';
     wrap.classList.remove(inClass);
     wrap.classList.add('slide-in-top');
-  }, 280);
+    setTimeout(() => { delete wrap.dataset.animating; }, 220);
+  }, 180);
 }
 
 let swipeDidOccur = false;
+let swipeGesturesReady = false;
 
 function setupSwipeGestures() {
+  if (swipeGesturesReady) return;
+  swipeGesturesReady = true;
   const el = wordsSwipeView;
   let startY = 0, isDragging = false;
 
@@ -1433,7 +1648,8 @@ if (shuffleBtn) {
   shuffleBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     const wrap = document.getElementById('swipe-wrap');
-    if (!wrap) return;
+    if (!wrap || wrap.dataset.animating === 'true') return;
+    wrap.dataset.animating = 'true';
 
     shuffleBtn.style.transform = 'scale(0.9)';
     setTimeout(() => shuffleBtn.style.transform = 'scale(1)', 150);
@@ -1442,6 +1658,7 @@ if (shuffleBtn) {
     wrap.classList.add('shuffle-anim');
     
     setTimeout(() => {
+      if (!wrap.isConnected || currentViewMode !== 'swipe' || currentLibraryLevel !== 2) return;
       // Swap data halfway through animation
       // Only shuffle from the current card (swipeIndex) onwards, preserving studied cards
       for (let i = swipeWords.length - 1; i > swipeIndex; i--) {
@@ -1455,6 +1672,7 @@ if (shuffleBtn) {
     setTimeout(() => {
       wrap.classList.remove('shuffle-anim');
       wrap.style.transition = '';
+      delete wrap.dataset.animating;
     }, 400);
   });
 }
@@ -1463,10 +1681,12 @@ const autoPlayBtn = document.getElementById('auto-play-toggle');
 if (autoPlayBtn) {
   // Set initial active state
   if (autoPlayPronunciation) autoPlayBtn.classList.add('active');
+  autoPlayBtn.setAttribute('aria-pressed', String(autoPlayPronunciation));
   autoPlayBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     autoPlayPronunciation = !autoPlayPronunciation;
-    autoPlayBtn.textContent = autoPlayPronunciation ? '🔊' : '🔇';
+    autoPlayBtn.setAttribute('aria-pressed', String(autoPlayPronunciation));
+    autoPlayBtn.title = autoPlayPronunciation ? '자동 발음 끄기' : '자동 발음 켜기';
     autoPlayBtn.classList.toggle('active', autoPlayPronunciation);
     if (autoPlayPronunciation && swipeWords[swipeIndex]) {
        const parsed = parseWordData(swipeWords[swipeIndex]);
@@ -1511,6 +1731,9 @@ function updateHideToggleAvailability(words) {
 }
 
 function applyHideState() {
+  document.querySelectorAll('.hide-toggle-btn[data-target]').forEach(btn => {
+    btn.setAttribute('aria-pressed', String(hideState[btn.dataset.target]));
+  });
   const states = [
     { cls: 'hide-word-state', val: !hideState.word },
     { cls: 'hide-meaning-state', val: !hideState.meaning },
@@ -1529,10 +1752,12 @@ function applyHideState() {
 }
 
 document.querySelectorAll('.hide-toggle-btn[data-target]').forEach(btn => {
+  btn.setAttribute('aria-pressed', String(hideState[btn.dataset.target]));
   btn.addEventListener('click', () => {
     const target = btn.dataset.target;
     hideState[target] = !hideState[target];
     btn.classList.toggle('active', hideState[target]);
+    btn.setAttribute('aria-pressed', String(hideState[target]));
     applyHideState();
   });
 });

@@ -15,7 +15,7 @@
   <meta name="description" content="단어장을 관리하고 AI로 단어를 추출하여 학습하는 스마트 단어장 앱입니다." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Nunito:wght@700;800;900&family=Jua&family=Comic+Neue:wght@700&family=Nanum+Pen+Script&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=security1" />
+  <link rel="stylesheet" href="style.css?v=nav3" />
   <script src="https://cdn.jsdelivr.net/npm/hangul-js@0.2.6/hangul.min.js" integrity="sha384-G22Pi1f211WMmUGwz27Cwk4q7lPQgID4wzLCqVXCogBL8XNA5AYWkiTSw1txL9xJ" crossorigin="anonymous"></script>
   <style>
     /* Hard override: no scrollbars ever, but keep scrollability */
@@ -110,9 +110,9 @@
           <div class="ios-nav-inline">
             <button id="ios-back-btn" class="ios-nav-back" style="visibility: hidden;">
               <span class="ios-nav-back-chevron">‹</span>
-              <span id="ios-back-text">목록</span>
+              <span class="ios-back-label-slot"><span id="ios-back-text">단어장 목록</span></span>
             </button>
-            <div id="ios-nav-title-inline" class="ios-nav-title-inline">superword</div>
+            <div id="ios-nav-title-inline" class="ios-nav-title-inline" aria-hidden="true">superword</div>
             <div class="ios-nav-actions">
               <span id="word-count-badge" class="badge badge-ai hidden" style="font-size:12px; padding:2px 6px;">0 단어</span>
               <button id="settings-btn" class="ios-nav-action-btn" title="설정">
@@ -123,8 +123,8 @@
 
           <!-- Large Title Row -->
           <div class="ios-large-title" style="display: flex; flex-direction: column; align-items: flex-start; gap: 12px; width: 100%;">
-            <div style="display: flex; flex-direction: column;">
-              <div id="ios-large-title-text" class="ios-large-title-text">단어장 타이틀</div>
+            <div class="ios-title-slot">
+              <div id="ios-large-title-text" class="ios-large-title-text"><span class="ios-title-label">단어장 타이틀</span></div>
             </div>
 
             <!-- Action Bar Row (Hidden by default, shown in words view) -->
@@ -241,16 +241,20 @@
 </div> <!-- End page-wrapper -->
 
   <!-- Floating Hide Toggle Bar (fixed bottom) -->
-  <div class="hide-toggle-bar hidden" id="hide-toggle-bar">
+  <div class="hide-toggle-bar hidden" id="hide-toggle-bar" role="toolbar" aria-label="단어 학습 도구">
+    <div class="hide-toggle-options" role="group" aria-label="표시할 항목">
     <button class="hide-toggle-btn active" id="toggle-word" data-target="word">단어</button>
     <button class="hide-toggle-btn active" id="toggle-meaning" data-target="meaning">뜻</button>
     <button class="hide-toggle-btn active" id="toggle-example" data-target="example">예문</button>
     <button class="hide-toggle-btn active" id="toggle-related" data-target="related">유의어</button>
-    <span class="shorts-divider shorts-only" style="color:var(--text-muted); opacity:0.3; margin:0 4px;">|</span>
-    <button id="auto-play-toggle" class="hide-toggle-btn shorts-only" title="자동 재생">🔇</button>
-    <button id="shuffle-swipe-btn" class="hide-toggle-btn shorts-only" title="셔플">🔀</button>
-    <span class="shorts-divider" style="color:var(--text-muted); opacity:0.3; margin:0 4px;">|</span>
-    <span id="swipe-counter" class="swipe-counter" style="font-size:0.75rem; color:var(--text-secondary); font-weight: 500; font-family: var(--font-mono);"></span>
+    </div>
+    <div class="shorts-controls" inert aria-hidden="true">
+      <div class="shorts-controls-inner">
+        <button id="auto-play-toggle" class="hide-toggle-btn" title="자동 발음" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4zM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14"/></svg><span>자동 발음</span></button>
+        <span id="swipe-counter" class="swipe-counter" aria-live="polite"></span>
+        <button id="shuffle-swipe-btn" class="hide-toggle-btn" title="남은 단어 섞기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m17 3 4 4-4 4M3 17c7 0 7-10 14-10h4M17 13l4 4-4 4M3 7c3 0 5 2 7 5s4 5 7 5h4"/></svg><span>섞기</span></button>
+      </div>
+    </div>
   </div>
 
 
@@ -768,6 +772,6 @@
 
   <span style="font-family:'Pretendard'; opacity:0; pointer-events:none;">.</span>
   <span style="font-family:'Pretendard'; font-weight:700; opacity:0; pointer-events:none;">.</span>
-  <script type="module" src="app.js?v=security1"></script>
+  <script type="module" src="app.js?v=nav3"></script>
 </body>
 </html>
