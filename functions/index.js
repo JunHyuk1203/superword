@@ -10,6 +10,7 @@ const aiModel = defineString('AI_MODEL', {default: 'gemini-3.1-flash-lite'});
 
 exports.studyAi = onCall({
   region: 'asia-northeast3', secrets: [aiKey], timeoutSeconds: 60,
+  serviceAccount: 'superword-ai-runtime@goodnotesword-454fa.iam.gserviceaccount.com',
   maxInstances: 2, concurrency: 20, memory: '256MiB',
   // App Check requires site registration first. Auth + quotas are always enforced.
   enforceAppCheck: false,

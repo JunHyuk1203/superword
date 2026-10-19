@@ -1,6 +1,6 @@
 # 보안 점검 결과 — 2026-10-19
 
-기존 AI 키는 사용자 요청대로 교체·폐기·재발급하지 않았습니다. Blaze 전환 후 기존 값을 Firebase Secret Manager의 `AI_API_KEY`에 등록했습니다. 키 값은 새 소스·문서·로그에 출력하지 않았습니다. `studyAi` 서버를 서울 리전에 배포했고 기존 키로 Gemini 3.1 Flash-Lite의 HTTP 200 응답을 확인했습니다. 웹은 기존 GitHub Pages를 사용하며 이 변경을 게시한 후 새 규칙을 적용합니다. 절차는 [FIREBASE_SETUP.md](FIREBASE_SETUP.md)에 있습니다.
+기존 AI 키는 사용자 요청대로 교체·폐기·재발급하지 않았습니다. Blaze 전환 후 기존 값을 Firebase Secret Manager의 `AI_API_KEY`에 등록했습니다. 키 값은 새 소스·문서·로그에 출력하지 않았습니다. `studyAi` 서버를 서울 리전에 배포했고 기존 키로 Gemini 3.1 Flash-Lite의 HTTP 200 응답을 확인했습니다. 기존 GitHub Pages의 실제 app.js 일치와 배포 성공을 확인한 후 새 Firestore 규칙도 배포했습니다. Firebase Hosting은 사용하지 않습니다. 절차는 [FIREBASE_SETUP.md](FIREBASE_SETUP.md)에 있습니다.
 
 ## 수정한 위험
 
@@ -29,6 +29,8 @@
 - 앞선 Gradle 실행이 삭제한 추적 캐시 6개만 복구했습니다. 작업 전 변경된 다른 캐시 3개는 유지했습니다.
 - 운영 규칙의 이전 버전은 `security-test-results/firestore-before-deploy.rules`에 백업했습니다. 원본 ruleset ID도 파일에 보관했습니다.
 - 운영 callable의 비로그인 요청은 HTTP 401 `UNAUTHENTICATED`로 거부되며 GitHub Pages 출처의 CORS 응답을 확인했습니다. 빌드 컨테이너 이미지에는 30일 보관 정책을 적용했습니다.
+- 운영 Firestore 규칙 내용은 로컬 파일과 일치합니다. Pages에서 `backup_v11/app.js`, `temp_app.js`, `functions/index.js`는 모두 404입니다.
+- 전용 AI 실행 계정에는 프로젝트 `roles/datastore.user`와 `AI_API_KEY`의 `roles/secretmanager.secretAccessor`만 부여했습니다. 서비스 계정 개인 키는 생성하지 않았습니다.
 
 ## 남은 제약
 

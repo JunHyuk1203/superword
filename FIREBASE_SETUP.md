@@ -23,6 +23,8 @@ npx firebase deploy --only functions:superword-ai --project goodnotesword-454fa
 
 Cloud Functions/Secret Manager를 사용하려면 프로젝트가 해당 기능을 지원하는 요금제여야 합니다. 요금제 변경이나 결제 연결은 자동으로 실행하지 않습니다. 함수 실행 서비스 계정에는 Firestore 접근 권한(`roles/datastore.user`)과 `AI_API_KEY`의 Secret Accessor 권한이 필요합니다. Firebase CLI는 함수에 바인딩된 비밀의 접근 권한을 배포 과정에서 설정합니다. 조직 정책이 이를 차단하면 프로젝트 관리자가 해당 계정의 권한을 확인해야 합니다. 광범위한 Editor 권한이나 클라이언트의 비밀 읽기 권한을 추가하지 마세요.
 
+운영 함수의 실행 계정은 `superword-ai-runtime@goodnotesword-454fa.iam.gserviceaccount.com`입니다. 새 프로젝트에서는 먼저 동일한 전용 서비스 계정을 만들고 `roles/datastore.user`를 부여해야 합니다. 서비스 계정 개인 키 파일을 만들 필요는 없습니다. 기존 기본 Compute 계정에 있던 프로젝트 Editor 권한은 다른 서비스에 영향이 없도록 변경하지 않습니다.
+
 서버 함수 배포 후 새 웹 클라이언트를 배포하고, 마지막으로 새 규칙을 적용합니다. 오래 열린 탭은 새로고침해야 합니다. 이 순서를 지키면 기존 웹 클라이언트가 사용하던 전역 AI 캐시를 먼저 막아서 생기는 배포 중 오류를 줄일 수 있습니다.
 
 ```powershell
