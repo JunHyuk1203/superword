@@ -1,0 +1,78 @@
+SUPERWORD PERSONAL NON-COMMERCIAL USE LICENSE
+Version 1.0, 20 October 2026
+
+Copyright (c) 2026 JunHyuk1203. All rights reserved.
+
+1. Scope and ownership
+
+This license applies to the original source code, documentation, designs, and
+other original materials in this repository (the "Software") to the extent
+owned by the copyright holder. The Software is source-available proprietary
+software. It is not licensed as open-source software. All rights not expressly
+granted below are reserved.
+
+2. Limited permission
+
+Subject to these terms, you may view and study the Software, download it, make
+copies reasonably necessary for your own use, and compile and run an unmodified
+copy solely for your own personal, private, non-commercial purposes, including
+personal learning and evaluation. Compilation does not authorize source-code
+changes. Using the Software's existing configuration mechanisms without changing
+its source code is permitted within this limited permission.
+
+Keep this license and all copyright, attribution, and other proprietary notices
+intact in every permitted copy. No right to sublicense the Software is granted.
+
+3. Uses requiring prior written permission
+
+Without the copyright holder's express prior written permission, you must not:
+
+  a. Use the Software commercially, directly or indirectly, including selling,
+     licensing, monetizing, advertising-supported use, use in business
+     operations, or providing paid services, products, or commercial training.
+     Free provision as part of a commercial activity is also prohibited.
+  b. Modify, adapt, translate, port, or otherwise alter the Software, whether
+     privately or publicly, or create derivative works based on it.
+  c. Copy or incorporate all or any protected portion of the Software into
+     another application, website, service, product, or other work.
+  d. Redistribute, publish, rehost, sublicense, sell, rent, or otherwise provide
+     the Software or copies of it to others, in source or compiled form, or
+     operate a public or shared deployment for others, even without charge.
+  e. Remove or alter copyright, license, attribution, or proprietary notices,
+     or represent the Software as your own original work.
+
+Permission requests must be directed to the repository owner at
+https://github.com/JunHyuk1203. Silence does not constitute permission.
+
+4. Hosting-platform permissions and statutory rights
+
+Nothing in this license limits permissions independently granted under GitHub's
+applicable Terms of Service, including viewing and forking a public repository
+within GitHub as provided by those terms. Such platform permissions do not grant
+additional rights under this license to commercially exploit, modify, create
+derivative works from, or redistribute the Software outside those permissions.
+Nothing in this license restricts rights or exceptions that applicable law does
+not permit the copyright holder to restrict.
+
+5. Third-party materials, user data, and trademarks
+
+Third-party libraries, fonts, services, and other materials remain subject to
+their respective licenses and terms. This license does not relicense them or
+claim ownership of them. It does not restrict your own input data or generated
+outputs that do not contain protected portions of the Software. No trademark,
+brand, logo, endorsement, or service-access rights are granted by this license.
+
+6. Termination
+
+The permissions granted by this license terminate automatically if you breach
+its terms. You must then stop using the Software and delete copies made under
+this license, except to the extent retention is required by applicable law.
+Further use requires express written permission from the copyright holder.
+
+7. Disclaimer
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY ARISING FROM OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
