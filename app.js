@@ -379,10 +379,9 @@ function animateLibraryNavigation(direction) {
   const epoch = libraryNavEpoch;
   const returning = direction < 0 && libraryNavSnapshot?.backVisible;
   const backVisible = iosBackBtn.style.visibility !== 'hidden';
-  const advancing = direction > 0 && backVisible && libraryNavSnapshot?.titleText === iosBackText.textContent;
-  // The title reused as a back label already has its own transfer animation.
-  // Otherwise retain the outgoing title in a clipped layer until it slides away.
-  if (!advancing && libraryNavSnapshot?.titleBounds.width > 0) {
+  // Keep the real back label visible on pushes. A separate flying copy can
+  // disappear in iOS compositing while its destination is hidden.
+  if (libraryNavSnapshot?.titleBounds.width > 0) {
     const from = libraryNavSnapshot.titleBounds;
     const bar = iosNavBar.getBoundingClientRect();
     const barStyle = getComputedStyle(iosNavBar);
@@ -417,7 +416,7 @@ function animateLibraryNavigation(direction) {
     libraryNavAnimations.push(animation);
   };
   if (!returning) slideIn(iosLargeTitleText.querySelector('.ios-title-label'));
-  if (backVisible && !advancing) slideIn(iosBackText);
+  if (backVisible && direction < 0) slideIn(iosBackText);
   // WebView's compositor can start late or pause while JS timers keep ticking.
   // A wall-clock deadline must not replace a label before its actual arrival.
   const clearWhenSettled = () => {
@@ -429,7 +428,7 @@ function animateLibraryNavigation(direction) {
     } else clearLibraryNavigationMotion();
   };
   libraryNavRevealTimer = setTimeout(clearWhenSettled, timing.duration + 80);
-  if (!returning && !advancing) return;
+  if (!returning) return;
   const from = returning ? libraryNavSnapshot.backBounds : libraryNavSnapshot.titleBounds;
   const destination = returning ? iosLargeTitleText : iosBackText;
   destination.classList.add('library-nav-pending');

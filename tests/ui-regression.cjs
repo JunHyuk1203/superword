@@ -414,10 +414,11 @@ async function main() {
           window.uiTest.loadBooks();
           window.uiTest.loadChapters('book', '영어 단어장');
           await new Promise(requestAnimationFrame);
-          if (label.textContent !== '단어장 목록') problems.push('root label mismatch');
+          if (label.textContent !== '단어장 목록' || getComputedStyle(label).visibility !== 'visible') problems.push('root label missing during push');
           window.uiTest.loadWords('book', 'chapter', 'Day 01');
           await new Promise(requestAnimationFrame);
-          duration = Math.max(duration, ...document.querySelector('.library-nav-ghost').getAnimations().map(animation => animation.effect.getTiming().duration));
+          duration = Math.max(duration, ...document.querySelector('.ios-title-label').getAnimations().map(animation => animation.effect.getTiming().duration));
+          if (getComputedStyle(label).visibility !== 'visible' || document.querySelector('.library-nav-ghost')) problems.push('book label missing during push');
           back.click();
           await new Promise(requestAnimationFrame);
           const style = getComputedStyle(label);
@@ -438,15 +439,29 @@ async function main() {
       await page.evaluate(async () => {
         window.uiTest.loadWords('book', 'chapter', 'Day 01');
         await new Promise(requestAnimationFrame);
-        const movement = document.querySelector('.library-nav-ghost').getAnimations()[0];
+        const movement = document.querySelector('.ios-title-label').getAnimations()[0];
         movement.pause();
         movement.currentTime = 240;
         await new Promise(requestAnimationFrame);
       });
-      assert.equal(await page.locator('#ios-back-text').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'Destination back label waits for transfer arrival');
-      assert.equal(await page.locator('.library-nav-ghost').isVisible(), true);
-      await page.evaluate(() => document.querySelector('.library-nav-ghost').getAnimations()[0].play());
-      await page.waitForFunction(() => !document.querySelector('#ios-back-text').classList.contains('library-nav-pending'));
+      assert.equal(await page.locator('#ios-back-text').evaluate(el => getComputedStyle(el).visibility), 'visible', 'Real back label stays visible during forward navigation');
+      assert.equal(await page.locator('.library-nav-ghost').count(), 0, 'Forward navigation does not depend on a flying replacement');
+      const forwardFrames = await page.evaluate(async () => {
+        const animation = document.querySelector('.ios-title-label').getAnimations()[0];
+        const frames = [];
+        for (const time of [0, 80, 240, 519]) {
+          animation.currentTime = time;
+          await new Promise(requestAnimationFrame);
+          const label = document.querySelector('#ios-back-text');
+          const bounds = label.getBoundingClientRect();
+          frames.push(getComputedStyle(label).visibility === 'visible' && bounds.width > 0 &&
+            bounds.height > 0 && label.textContent === '영어 단어장' && label.getAnimations().length === 0);
+        }
+        animation.play();
+        await animation.finished;
+        return frames;
+      });
+      assert.deepEqual(forwardFrames, [true, true, true, true], 'Back label is present from the first forward frame through arrival');
       assert.equal(await page.locator('#ios-back-text').isVisible(), true);
       assert.equal(await page.locator('#ios-back-text').textContent(), '영어 단어장');
       await page.evaluate(async () => {
@@ -503,13 +518,15 @@ async function main() {
       await new Promise(requestAnimationFrame);
       window.uiTest.loadWords('book', 'chapter', 'Day 01');
       await new Promise(requestAnimationFrame);
+      document.querySelector('#ios-back-btn').click();
+      await new Promise(requestAnimationFrame);
       const ghost = document.querySelector('.library-nav-ghost');
       const movement = ghost.getAnimations()[0];
       const finish = movement.onfinish;
       movement.onfinish = null;
       movement.finish();
       await new Promise(requestAnimationFrame);
-      const target = document.querySelector('#ios-back-text');
+      const target = document.querySelector('#ios-large-title-text');
       const a = ghost.getBoundingClientRect(), b = target.getBoundingClientRect();
       const held = {fill:movement.effect.getTiming().fill, x:Math.abs(a.left-b.left), y:Math.abs(a.top-b.top)};
       finish();
@@ -517,12 +534,16 @@ async function main() {
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);
       const removed = !ghost.isConnected;
+      window.uiTest.loadWords('book', 'chapter', 'Day 01');
+      await new Promise(requestAnimationFrame);
       window.uiTest.loadChapters('book', '영어 단어장');
       await new Promise(requestAnimationFrame);
       document.querySelector('.library-nav-ghost')?.getAnimations()[0].pause();
       document.dispatchEvent(new Event('visibilitychange'));
       const resumed = !document.querySelector('.library-nav-ghost') && !document.querySelector('.library-nav-pending');
       window.uiTest.loadWords('book', 'chapter', 'Day 01');
+      await new Promise(requestAnimationFrame);
+      window.uiTest.loadChapters('book', '영어 단어장');
       await new Promise(requestAnimationFrame);
       window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted:true}));
       return {held, revealedBeforeRemoval, removed, resumed,
