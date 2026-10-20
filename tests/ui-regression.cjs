@@ -17,7 +17,7 @@ async function main() {
     name === 'httpsCallable' ? '() => async data => { (window.aiFixtureRequests ||= []).push(data); if (window.deferAiFixture) return new Promise(resolve => {window.resolveAiFixture = resolve;}); return {data: data.action === "appeal" ? {isApproved:true,fromCache:false} : {text:"fixture report"}}; }' :
     name === 'onAuthStateChanged' ? '(auth, callback) => { window.authFixture = callback; }' :
     name === 'getDocs' ? 'async () => ({empty: !(window.historyFixture?.length), forEach(callback) { (window.historyFixture || []).forEach(data => callback({data: () => data})); }})' :
-    name === 'onSnapshot' ? '(...args) => { window.snapshotCalls = (window.snapshotCalls || 0) + 1; const entry = {cancelled:false, deliver() {if (!this.cancelled) args[1]({empty:true,size:0,forEach(){}});}}; (window.snapshotEntries ||= []).push(entry); if (window.snapshotError) args[2](new Error(window.snapshotError)); else if (!window.deferSnapshots) entry.deliver(); return () => {entry.cancelled = true;}; }' :
+    name === 'onSnapshot' ? '(...args) => { window.snapshotCalls = (window.snapshotCalls || 0) + 1; const entry = {cancelled:false, deliver(words = []) {if (!this.cancelled) args[1]({empty:!words.length,size:words.length,forEach(callback){words.forEach((data,index)=>callback({data:()=>data,ref:{path:"fixture/words/"+index}}));}});}}; (window.snapshotEntries ||= []).push(entry); if (window.snapshotError) args[2](new Error(window.snapshotError)); else if (!window.deferSnapshots) entry.deliver(); return () => {entry.cancelled = true;}; }' :
     '(...args) => ({})'
   }`).join(',') + ';';
   const instrumented = stubs + source.replace(/import\s*\{[\s\S]*?\}\s*from\s*"[^"]+";/g, '') + `
@@ -75,6 +75,11 @@ async function main() {
         front: `example${i}`, back: '📌 뜻\n예시\n\n📖 예문\n• This is an example.', order: i
       })));
     });
+    if (process.env.UI_TEST_HIDE_STATE) {
+      await require('./hide-state-regression.cjs')(page);
+      assert.deepEqual(errors, []);
+      return;
+    }
     if (process.env.UI_TEST_IOS_PAINT) {
       await require('./ios-title-paint.cjs')(page);
       assert.deepEqual(errors, []);
@@ -788,6 +793,8 @@ async function main() {
     assert.equal(providerRequests.length, 0);
     assert.deepEqual(errors, []);
     console.log('PASS direct account switch and stale server response suppression');
+    await require('./hide-state-regression.cjs')(page);
+    assert.deepEqual(errors, []);
     if (process.env.UI_TEST_SCREENSHOT) await page.screenshot({path: process.env.UI_TEST_SCREENSHOT});
   } finally {
     await browser.close();

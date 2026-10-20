@@ -1354,7 +1354,6 @@ function setViewMode(mode) {
   } else if (mode === 'edit') {
     // Clear all hide states when entering edit mode
     hideState = { word: true, meaning: true, example: true, related: true };
-    document.querySelectorAll('.hide-toggle-btn[data-target]').forEach(b => b.classList.add('active'));
     applyHideState();
     document.body.classList.remove('shorts-mode-active');
   } else if (mode === 'swipe') {
@@ -1786,7 +1785,7 @@ function updateHideToggleAvailability(words) {
   for (const w of words) {
     const parsed = parseWordData(w);
     if (parsed.examples && parsed.examples.length > 0) hasExample = true;
-    if (parsed.related && parsed.related.length > 0) hasRelated = true;
+    if (parsed.synonyms.length || parsed.antonyms.length || parsed.related.length) hasRelated = true;
     if (hasExample && hasRelated) break;
   }
   
@@ -1800,21 +1799,19 @@ function updateHideToggleAvailability(words) {
       btn.disabled = true;
       btn.style.opacity = '0.3';
       btn.title = '해당 데이터가 없습니다';
-      if (hideState[target]) {
-        hideState[target] = false;
-        btn.classList.add('active');
-        applyHideState();
-      }
     } else {
       btn.disabled = false;
       btn.style.opacity = '1';
       btn.title = '';
     }
   });
+  // Data availability must not overwrite the user's show/hide preference.
+  applyHideState();
 }
 
 function applyHideState() {
   document.querySelectorAll('.hide-toggle-btn[data-target]').forEach(btn => {
+    btn.classList.toggle('active', hideState[btn.dataset.target]);
     btn.setAttribute('aria-pressed', String(hideState[btn.dataset.target]));
   });
   const states = [
@@ -1835,15 +1832,13 @@ function applyHideState() {
 }
 
 document.querySelectorAll('.hide-toggle-btn[data-target]').forEach(btn => {
-  btn.setAttribute('aria-pressed', String(hideState[btn.dataset.target]));
   btn.addEventListener('click', () => {
     const target = btn.dataset.target;
     hideState[target] = !hideState[target];
-    btn.classList.toggle('active', hideState[target]);
-    btn.setAttribute('aria-pressed', String(hideState[target]));
     applyHideState();
   });
 });
+applyHideState();
 
 
 
