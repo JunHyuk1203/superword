@@ -3322,10 +3322,10 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 
 @media (max-width: 959px) {
   html {
-    --gui-scale: 0.7;
-    --screen-height: calc(100dvh / 0.7);
-    --screen-width: calc(100vw / 0.7);
-    zoom: 0.7;
+    --gui-scale: 0.805;
+    --screen-height: calc(100dvh / var(--gui-scale));
+    --screen-width: calc(100vw / var(--gui-scale));
+    zoom: var(--gui-scale);
   }
   .app-container { padding: 4px 4px 60px; gap: 4px; }
   .words-card-grid { gap: 0.4rem; }

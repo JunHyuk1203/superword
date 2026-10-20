@@ -34,7 +34,7 @@ module.exports = async function verifyResponsiveStudy(page) {
     referenceFont ||= size.font;
     referenceButton ||= [size.buttonWidth,size.buttonHeight];
     assert.ok(Math.abs(size.width-width)<1 && !size.overflow, `Page uses available width at ${width}: ${JSON.stringify(size)}`);
-    assert.equal(size.scale,width<960 ? 0.7 : 1,'Only the mobile GUI is scaled down 30%');
+    assert.equal(size.scale,width<960 ? 0.805 : 1,'Mobile GUI is 15% larger than the previous 70% scale; desktop is unchanged');
     assert.ok(Math.abs(size.buttonHeight-size.cssButtonHeight*size.scale)<1,'Buttons render at the requested GUI scale');
     if (width<960) {
       assert.equal(size.font, referenceFont, 'Mobile reading text keeps the reference size');
