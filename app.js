@@ -128,7 +128,9 @@ function openModal(modalEl) {
 function closeModal(modalEl) {
   clearTimeout(modalCloseTimers.get(modalEl));
   modalEl.classList.remove('show');
-  if (modalEl.id === 'test-modal') document.body.classList.remove('test-open');
+  if (modalEl.id === 'test-modal') {
+    document.body.classList.remove('test-open');
+  }
   modalCloseTimers.set(modalEl, setTimeout(() => {
     modalEl.classList.add('hidden');
     modalCloseTimers.delete(modalEl);
@@ -1425,7 +1427,7 @@ function adjustSwipeViewHeight() {
   const rect = swipeView.getBoundingClientRect();
   const barTop = hideToggleBar.getBoundingClientRect().top;
   const bottom = hideToggleBar.classList.contains('hidden') ? vph - 16 : Math.min(vph, barTop) - 14;
-  swipeView.style.height = Math.max(bottom - rect.top, 120) + 'px';
+  swipeView.style.height = Math.max(bottom - rect.top, 48) + 'px';
   fitSwipeCard();
 }
 
@@ -1486,6 +1488,7 @@ function buildSwipeCardHTML(parsed, originalIdx) {
 
   return `
     <div class="swipe-card-content">
+      <div class="swipe-card-primary">
       <div class="word-card-header" style="border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:0.8rem;display:flex;align-items:center;flex-wrap:wrap;gap:6px;">
         <span class="word-card-word word-section-word">${escapeHTML(parsed.word)}</span>
         <button class="pronounce-btn" data-word="${escapeHTML(parsed.word)}" title="발음 듣기" style="background:none;border:none;cursor:pointer;margin-left:2px;vertical-align:middle;padding:4px;opacity:0.8;">🔊</button>
@@ -1498,6 +1501,8 @@ function buildSwipeCardHTML(parsed, originalIdx) {
         <div class="word-card-meaning">${escapeHTML(parsed.meaning)}</div>
       </div>` : ''}
       ${etySection}
+      </div>
+      <div class="swipe-card-details">
       ${parsed.examples.length ? `<div class="word-card-section word-section-example">
         <div class="word-card-section-label">📖 예문</div>
         <div class="word-card-example">${parsed.examples.map(e => {
@@ -1509,6 +1514,7 @@ function buildSwipeCardHTML(parsed, originalIdx) {
           }).join('')}</div>
       </div>` : ''}
       ${hasRelated ? `<div class="word-card-related-group">${synSection}${antSection}${relSection}</div>` : ''}
+      </div>
     </div>
   `;
 }
@@ -1516,6 +1522,9 @@ function buildSwipeCardHTML(parsed, originalIdx) {
 function renderSwipeView() {
   swipeWords = [...currentLoadedWords];
   if (!swipeWords.length) {
+    $('swipe-counter').textContent = '0 / 0';
+    $('prev-swipe-btn').disabled = true;
+    $('next-swipe-btn').disabled = true;
     wordsSwipeView.innerHTML = `<div class="empty-state" style="padding-top: 10vh;">
   <div class="empty-state-icon">📖</div>
   <p class="empty-state-title">등록된 단어가 없습니다</p>
@@ -1548,6 +1557,8 @@ function renderSwipeCard(idx) {
   
   card.innerHTML = buildSwipeCardHTML(parsed, originalIdx);
   counter.textContent = `${idx + 1} / ${swipeWords.length}`;
+  $('prev-swipe-btn').disabled = idx === 0;
+  $('next-swipe-btn').disabled = idx === swipeWords.length - 1;
 
 
 
@@ -1564,19 +1575,8 @@ function fitSwipeCard() {
   const wrap = document.getElementById('swipe-wrap');
   if (!card || !wrap) return;
 
-  // Reset base font size
-  let percent = 100;
-  card.style.fontSize = percent + '%';
-  
-  // Force layout calculation
-  void card.offsetHeight;
-  
-  // Shrink font size gradually until it fits (minimum 55%)
-  while (card.scrollHeight > wrap.clientHeight && percent > 55) {
-    percent -= 3;
-    card.style.fontSize = percent + '%';
-    void card.offsetHeight;
-  }
+  // Adapt the layout rather than shrinking reading text down to 55%.
+  card.style.fontSize = '100%';
 }
 
 // ─── Peek Mode: Click on hidden element to reveal for 2s ────────────────────────────────────
@@ -1648,16 +1648,24 @@ function setupSwipeGestures() {
   if (swipeGesturesReady) return;
   swipeGesturesReady = true;
   const el = wordsSwipeView;
-  let startY = 0, isDragging = false;
+  let startY = 0, isDragging = false, readingContent = false;
+  const hasScrollableContent = target => {
+    for (let node = target instanceof Element ? target : null; node && el.contains(node); node = node.parentElement) {
+      if (node.scrollHeight > node.clientHeight + 2 && /auto|scroll/.test(getComputedStyle(node).overflowY)) return true;
+    }
+    return false;
+  };
 
-  const onDragStart = (y) => {
+  const onDragStart = (y, target) => {
     startY = y;
-    isDragging = true;
+    isDragging = !target.closest('button, input, textarea, a');
+    readingContent = hasScrollableContent(target);
     swipeDidOccur = false;
   };
   const onDragEnd = (y) => {
     if (!isDragging) return;
     isDragging = false;
+    if (readingContent) return;
     const dy = y - startY;
     if (Math.abs(dy) < 40) return;
     swipeDidOccur = true;
@@ -1665,22 +1673,30 @@ function setupSwipeGestures() {
   };
 
   // Touch Events
-  el.addEventListener('touchstart', e => onDragStart(e.touches[0].clientY), { passive: true });
-  el.addEventListener('touchend', e => onDragEnd(e.changedTouches[0].clientY), { passive: true });
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) onDragStart(e.touches[0].clientY, e.target);
+    else isDragging = false;
+  }, { passive: true });
+  el.addEventListener('touchend', e => { if (e.changedTouches.length) onDragEnd(e.changedTouches[0].clientY); }, { passive: true });
+  el.addEventListener('touchcancel', () => { isDragging = false; }, { passive: true });
 
   // Mouse Events
-  el.addEventListener('mousedown', e => onDragStart(e.clientY));
+  el.addEventListener('mousedown', e => onDragStart(e.clientY, e.target));
   el.addEventListener('mouseup', e => onDragEnd(e.clientY));
   el.addEventListener('mouseleave', e => onDragEnd(e.clientY));
-  el.addEventListener('mousemove', e => { if(isDragging) e.preventDefault(); });
+  el.addEventListener('mousemove', e => { if (isDragging && !readingContent) e.preventDefault(); });
 
   el.addEventListener('wheel', e => {
+    if (hasScrollableContent(e.target)) return;
     if (Math.abs(e.deltaY) < 30) return;
     navigateSwipe(e.deltaY > 0 ? 1 : -1);
   }, { passive: true });
 }
 
 // Swallow clicks that occur immediately after dragging
+$('prev-swipe-btn').addEventListener('click', () => navigateSwipe(-1));
+$('next-swipe-btn').addEventListener('click', () => navigateSwipe(1));
+
 wordsSwipeView.addEventListener('click', e => {
   if (swipeDidOccur) {
     e.stopPropagation();

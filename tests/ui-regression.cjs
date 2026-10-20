@@ -75,6 +75,11 @@ async function main() {
         front: `example${i}`, back: '📌 뜻\n예시\n\n📖 예문\n• This is an example.', order: i
       })));
     });
+    if (process.env.UI_TEST_RESPONSIVE) {
+      await require('./responsive-study-regression.cjs')(page);
+      assert.deepEqual(errors, []);
+      return;
+    }
     if (process.env.UI_TEST_HIDE_STATE) {
       await require('./hide-state-regression.cjs')(page);
       assert.deepEqual(errors, []);
@@ -92,10 +97,12 @@ async function main() {
       await page.waitForTimeout(450);
       const layout = await page.evaluate(() => ({
         columns: getComputedStyle(document.querySelector('.words-card-grid')).gridTemplateColumns,
+        contentWidth: document.querySelector('.app-container').getBoundingClientRect().width,
         overflow: document.documentElement.scrollWidth > innerWidth
       }));
       assert.equal(layout.overflow, false, `Page overflow at ${width}`);
-      if (width >= 960) assert.equal(layout.columns.split(' ').length, 2, 'Desktop has two columns');
+      assert.ok(layout.contentWidth <= 520, 'Keep the reference reading width on every viewport');
+      assert.ok(layout.columns === 'none' || layout.columns.split(' ').length === 1, 'Cards keep a single readable column');
       if (process.env.UI_TEST_ARTIFACTS && [1440, 390].includes(width)) {
         await fs.mkdir(process.env.UI_TEST_ARTIFACTS, {recursive: true});
         await page.screenshot({path: path.join(process.env.UI_TEST_ARTIFACTS, `library-${width}.png`)});
@@ -273,7 +280,7 @@ async function main() {
             textAlignment: Math.abs((title.top + title.height / 2) - (backText.top + backText.height / 2)),
             duplicateVisible: getComputedStyle(document.querySelector('#ios-nav-title-inline')).visibility !== 'hidden'};
         });
-        assert.ok(compact.height < expanded - (width >= 960 ? 8 : 20), `${level} header shrinks at ${width}: ${expanded} -> ${compact.height}`);
+        assert.ok(compact.height < expanded - 20, `${level} header shrinks at ${width}: ${expanded} -> ${compact.height}`);
         assert.ok(compact.x < 2 && compact.y < 2 && compact.afterBack, 'Title moves beside back button');
         assert.ok(compact.textAlignment < 1, 'Current and previous titles share the same vertical center');
         assert.equal(compact.duplicateVisible, false);
@@ -315,7 +322,7 @@ async function main() {
           fits: bar.left >= 0 && bar.right <= innerWidth && bar.bottom <= innerHeight,
           overflow: document.documentElement.scrollWidth > innerWidth};
       });
-      assert.ok(fit.top >= 18 && fit.bottom >= 12, `Shorts card spacing at ${width}: ${JSON.stringify(fit)}`);
+      assert.ok(fit.top >= (width >= 600 ? 8 : 18) && fit.bottom >= 12, `Shorts card spacing at ${width}: ${JSON.stringify(fit)}`);
       assert.ok(fit.fits && !fit.overflow, `Toolbar fits at ${width}`);
       assert.equal(await page.locator('#auto-play-toggle').isVisible(), true);
       assert.equal(await page.locator('#shuffle-swipe-btn').isVisible(), true);
@@ -611,13 +618,9 @@ async function main() {
         }
         return {before, after:samples.at(-1), samples};
       });
-      if (width < 960) {
         assert.ok(heights.before - heights.after > 2, `Header heights differ at ${width}: ${heights.before} -> ${heights.after}`);
         assert.ok(heights.samples.some(height => height > heights.after + 0.5 && height < heights.before - 0.5), 'Header passes through intermediate heights');
         assert.ok(Math.max(...heights.samples.slice(1).map((height,i) => Math.abs(height - heights.samples[i]))) < (heights.before - heights.after) * 0.75, 'No single-frame height jump');
-      } else {
-        assert.ok(heights.before <= 64 && heights.after <= 64, 'Desktop screens keep a small single-row header');
-      }
       const settled = await page.locator('.ios-nav-bar').evaluate(bar => ({
         outer:bar.getBoundingClientRect().height,
         inner:bar.querySelector('.ios-nav-bar-inner').getBoundingClientRect().height,
@@ -635,24 +638,24 @@ async function main() {
         window.scrollTo(0, 0);
       });
       await page.waitForTimeout(800);
-      assert.ok(await page.locator('.ios-nav-bar').evaluate(el => el.getBoundingClientRect().height <= 64));
+      assert.ok(await page.locator('.ios-nav-bar').evaluate(el => el.getBoundingClientRect().height <= 180));
       await page.evaluate(() => window.uiTest.setViewMode('swipe'));
       await page.waitForTimeout(800);
       const desktop = await page.evaluate(() => {
         const bar = document.querySelector('.ios-nav-bar').getBoundingClientRect();
-        const settings = document.querySelector('#settings-btn').getBoundingClientRect();
         const controls = ['view-card-btn','view-swipe-btn','view-table-btn','start-test-btn','view-history-btn','open-extract-btn','export-csv-btn'].map(id => {
           const button = document.getElementById(id), box = button.getBoundingClientRect();
-          return {id, sameRow:Math.abs((box.top+box.height/2)-(settings.top+settings.height/2)) < 1,
-            fits:box.left >= bar.left && box.right <= settings.left && box.width >= 24};
+          return {id, fits:box.left >= bar.left && box.right <= bar.right && box.top >= bar.top && box.bottom <= bar.bottom && box.width >= 24};
         });
-        return {height:bar.height, controls, overflow:document.documentElement.scrollWidth > innerWidth};
+        return {height:bar.height,width:bar.width, controls, overflow:document.documentElement.scrollWidth > innerWidth};
       });
-      assert.ok(desktop.height <= 52 && !desktop.overflow, `Thin desktop header at ${width}: ${JSON.stringify(desktop)}`);
-      assert.ok(desktop.controls.every(button => button.sameRow && button.fits), `All desktop actions align with Settings at ${width}: ${JSON.stringify(desktop)}`);
+      const wideShorts = width / 900 >= 1.2;
+      assert.ok(desktop.width <= (wideShorts ? 1080 : 520) && desktop.height <= (wideShorts ? 64 : 132) && !desktop.overflow,
+        `Adaptive Shorts header at ${width}: ${JSON.stringify(desktop)}`);
+      assert.ok(desktop.controls.every(button => button.fits), `All actions fit the reference-size header at ${width}: ${JSON.stringify(desktop)}`);
     }
     await page.evaluate(() => window.uiTest.setViewMode('card'));
-    console.log('PASS desktop header: 960/1024/1440px, all seven controls beside Settings, compact and default height limits');
+    console.log('PASS reference-size desktop header: 960/1024/1440px, all controls fit, compact and default height limits');
     for (const width of [960, 1440]) {
       await page.setViewportSize({width, height:900});
       for (const mode of ['card', 'swipe']) {

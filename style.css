@@ -124,6 +124,8 @@ body[data-theme="light"] {
 html { 
   scroll-behavior: smooth;
   font-size: 17px; /* Apple HIG body size = 17pt */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   overscroll-behavior: none;
 }
 
@@ -182,7 +184,7 @@ body[data-theme="light"] .bg-orb { opacity: 0.12; }
 .app-container {
   position: relative;
   z-index: 1;
-  max-width: 680px;
+  max-width: 520px;
   margin: 0 auto;
   padding: 0 0 96px;  /* bottom space for floating pill bar */
   display: flex;
@@ -1964,7 +1966,7 @@ body[data-theme="light"] .word-card-pos {
   /* height is set dynamically via JS (adjustSwipeViewHeight) */
   display: flex;
   flex-direction: column;
-  min-height: 200px;
+  min-height: 0;
   overflow: hidden;
   padding-bottom: 0; /* Height ends above the measured bottom toolbar. */
 }
@@ -1975,7 +1977,7 @@ body[data-theme="light"] .word-card-pos {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  touch-action: none;
+  touch-action: pan-y pinch-zoom;
   transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease;
   will-change: transform, opacity;
 }
@@ -1999,6 +2001,8 @@ body[data-theme="light"] .word-card-pos {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
   -webkit-text-size-adjust: none;
   text-size-adjust: none;
+  overscroll-behavior: contain;
+  touch-action: pan-y pinch-zoom;
 }
 
 .swipe-card-content {
@@ -2007,6 +2011,12 @@ body[data-theme="light"] .word-card-pos {
   flex-direction: column;
   gap: 0.5rem;
   flex: 1;
+}
+.swipe-card-primary, .swipe-card-details {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 @keyframes flipShuffle {
@@ -2126,10 +2136,10 @@ body[data-theme="light"] .word-card-pos {
 body.shorts-mode-active {
   overflow: hidden;
   min-height: 0;
-  height: 100svh;
+  height: 100dvh;
   position: fixed;
   width: 100%;
-  touch-action: none;
+  touch-action: pan-y pinch-zoom;
 }
 body.shorts-mode-active .app-footer {
   display: none;
@@ -3108,7 +3118,7 @@ button:active {
 .sheet-modal {
   margin: 0 auto;
   width: 100%;
-  max-width: 640px;
+  max-width: 520px;
   max-height: 92vh;
   max-height: 92dvh;
   box-sizing: border-box;
@@ -3249,73 +3259,11 @@ button:focus-visible, select:focus-visible, input:focus-visible {
   outline-offset: 3px;
 }
 
-/* Desktop workspace: a full-width toolbar and a readable multi-column library. */
+/* Keep the reference reading width on large screens instead of enlarging cards. */
 @media (min-width: 960px) {
-  .app-container {
-    max-width: 1280px;
-    padding: 24px 40px 112px;
-  }
-
-  .ios-nav-bar {
-    top: 16px;
-    border: 1px solid var(--glass-border);
-    border-radius: 14px;
-    margin-bottom: 0;
-  }
-
-  .ios-nav-bar-inner {
-    max-width: none;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
-    grid-template-rows: minmax(44px, auto);
-    align-items: center;
-    column-gap: 10px;
-    min-height: 60px;
-    padding: 6px 16px;
-  }
-
-  .ios-nav-inline { display: contents; }
-  .ios-nav-back { grid-column: 1; grid-row: 1; max-width: min(180px, 18vw); }
-  body[data-library-level="0"] .ios-nav-back { display: none; }
-  .ios-nav-title-inline { grid-column: 2; grid-row: 1; text-align: left; }
-  .ios-nav-actions { grid-column: 4; grid-row: 1; }
-
-  .ios-large-title {
-    display: contents !important;
-  }
-
-  .ios-large-title-text { font-size: 26px; }
-  .ios-title-slot { grid-column: 2; grid-row: 1; width: auto; height: 32px; }
-  #words-action-wrapper { grid-column: 3; grid-row: 1; min-width: 0; }
-  .words-action-bar { gap: 6px; flex-wrap: nowrap; margin-bottom: 0 !important; }
-  .circle-action-btn {
-    width: auto; min-width: 0; height: 36px; flex-direction: row;
-    gap: 4px; padding: 0 8px;
-  }
-  .circle-action-btn .icon { font-size: 14px; line-height: 1; }
-  .circle-action-btn .label { font-size: 12px; }
-  .ios-nav-bar.compact .ios-nav-bar-inner { min-height: 48px; padding: 2px 16px; }
   .ios-nav-action-btn:hover, .circle-action-btn:hover, .edit-circle-btn:hover {
     background: var(--bg-tertiary);
   }
-
-  .words-card-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
-    gap: 20px;
-    padding-bottom: 40px;
-  }
-
-  .word-card { min-width: 0; padding: 24px; border: 1px solid var(--border); }
-  .word-card-section { overflow-wrap: anywhere; }
-  #view-books, #view-chapters {
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)) !important;
-    gap: 20px !important;
-  }
-  .lib-card { min-height: 156px; padding: 28px; }
-  #add-book-wrap, #add-chapter-wrap { margin-bottom: 24px !important; }
-  #add-book-btn, #add-chapter-btn { min-height: 44px; padding: 10px 20px !important; }
 
   .modal-screen { justify-content: center; align-items: center; padding: 32px; }
   .modal-screen .sheet-modal {
@@ -3330,8 +3278,106 @@ button:focus-visible, select:focus-visible, input:focus-visible {
   .sheet-modal .sheet-drag-bar { display: none; }
   .sheet-header { padding-top: 24px !important; }
 
-  body.shorts-mode-active .app-container { max-width: 1280px; margin: 0 auto; }
   body.shorts-mode-active .ios-nav-bar { border-radius: 0; margin-bottom: 0; top: 0; }
+}
+
+.app-container { padding: 4px 4px 60px; gap: 4px; }
+.words-card-grid { gap: 0.4rem; }
+.word-card { padding: 0.65rem 0.75rem 0.55rem; }
+.word-card-word { font-size: 1.65rem; }
+.shorts-controls .shorts-step-btn { flex: 0 0 28px; font-size: 24px; padding: 0; }
+.shorts-controls .swipe-counter { min-width: 44px; }
+.shorts-controls-inner { gap: 2px; }
+.word-card-section, .word-card-word { overflow-wrap: anywhere; }
+
+/* Landscape Shorts uses a wide card, including landscape tablets and browsers. */
+@media (min-width: 600px) and (min-aspect-ratio: 6/5) {
+  body.shorts-mode-active .app-container { max-width: 1080px; }
+  body.shorts-mode-active .ios-nav-bar-inner {
+    max-width: none; display: grid;
+    grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 12px;
+  }
+  body.shorts-mode-active .ios-nav-inline { grid-column: 1; min-width: 0; }
+  body.shorts-mode-active .ios-large-title { display: contents !important; }
+  body.shorts-mode-active .ios-title-slot { display: none; }
+  body.shorts-mode-active #words-action-wrapper { grid-column: 2; grid-row: 1; }
+  body.shorts-mode-active .words-action-bar { flex-wrap: nowrap; gap: 4px; margin: 0 !important; }
+  body.shorts-mode-active .circle-action-btn { width: 32px; height: 32px; min-width: 0; }
+  body.shorts-mode-active .circle-action-btn .label { display: none; }
+  body.shorts-mode-active #lib-views-container { margin-top: 8px; }
+  body.shorts-mode-active .swipe-card { overflow: hidden; }
+  body.shorts-mode-active .swipe-card-content {
+    display: grid; grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.2fr);
+    gap: 16px; padding: 12px; min-height: 0;
+  }
+  body.shorts-mode-active .swipe-card-primary,
+  body.shorts-mode-active .swipe-card-details {
+    min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    padding: 4px; touch-action: pan-y pinch-zoom;
+  }
+  body.shorts-mode-active .swipe-card-details { border-left: 1px solid var(--border); padding-left: 16px; }
+  body.shorts-mode-active .swipe-card-primary .word-card-header { position: relative; padding-right: 16px; }
+  body.shorts-mode-active .swipe-card-primary .word-card-num { position: absolute; top: 0; right: 0; }
+  body.shorts-mode-active .swipe-card-primary .word-section-etymology { margin-top: 4px; }
+  body.shorts-mode-active .swipe-card-primary .ety-container { padding: 6px; }
+  body.shorts-mode-active .swipe-card-primary .ety-chip { padding: 4px 8px; }
+  body.shorts-mode-active .swipe-card-primary .ety-en { font-size: 1rem; }
+  body.shorts-mode-active .hide-toggle-bar {
+    width: min(720px, calc(100vw - 32px)); display: flex; align-items: center;
+    gap: 12px; bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+  body.shorts-mode-active .hide-toggle-options { flex: 1; }
+  body.shorts-mode-active .shorts-controls { flex: 1; }
+}
+
+/* A short split pane can use a horizontal card without widening the page header. */
+@media (min-width: 480px) and (max-width: 599px) and (max-height: 650px) {
+  body.shorts-mode-active .hide-toggle-bar {
+    width: calc(100vw - 24px); display: flex; align-items: center; gap: 8px;
+    bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+  body.shorts-mode-active .hide-toggle-options { flex: 1; }
+  body.shorts-mode-active .shorts-controls { flex: 0 0 auto; }
+  body.shorts-mode-active .shorts-controls .hide-toggle-btn { min-width: 24px; padding: 4px; }
+  body.shorts-mode-active .shorts-controls .hide-toggle-btn span { display: none; }
+  body.shorts-mode-active .swipe-card { overflow: hidden; }
+  body.shorts-mode-active .swipe-card-content {
+    display: grid; grid-template-columns: minmax(150px, 0.75fr) minmax(0, 1.25fr);
+    min-height: 0; padding: 10px; gap: 10px;
+  }
+  body.shorts-mode-active .swipe-card-primary,
+  body.shorts-mode-active .swipe-card-details {
+    min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y pinch-zoom;
+  }
+  body.shorts-mode-active .swipe-card-details { border-left: 1px solid var(--border); padding-left: 10px; }
+  body.shorts-mode-active .swipe-card-primary .word-card-header { position: relative; padding-right: 16px; }
+  body.shorts-mode-active .swipe-card-primary .word-card-num { position: absolute; top: 0; right: 0; }
+  body.shorts-mode-active .swipe-card-primary .word-section-etymology { margin-top: 4px; }
+  body.shorts-mode-active .swipe-card-primary .ety-container { padding: 6px; }
+  body.shorts-mode-active .swipe-card-primary .ety-chip { padding: 4px 8px; }
+  body.shorts-mode-active .swipe-card-primary .ety-en { font-size: 1rem; }
+}
+
+/* Starting a test fills the web viewport, without entering browser fullscreen. */
+body.test-open #test-modal { padding: 0; align-items: stretch; justify-content: stretch; background: var(--bg-secondary); }
+body.test-open #test-modal .test-modal-box {
+  width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0;
+  border: 0; border-radius: 0; box-shadow: none; transform: none;
+  padding: env(safe-area-inset-top, 0px) max(20px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(20px, env(safe-area-inset-left, 0px));
+  overflow: hidden;
+}
+body.test-open #test-modal .sheet-drag-bar { display: none; }
+body.test-open #test-modal .sheet-header { flex: 0 0 auto; padding-top: 12px !important; }
+body.test-open #test-modal .test-screen:not(.hidden) {
+  flex: 1 1 auto; min-height: 0; width: 100%; max-width: 960px;
+  margin: 0 auto; overflow-y: auto; padding-bottom: 16px;
+}
+@media (max-height: 550px) {
+  body.test-open #test-flash { gap: 0.5rem; }
+  body.test-open .flashcard-container { min-height: 0; gap: 6px; }
+  body.test-open .flashcard { flex: 1; min-height: 100px; }
+  body.test-open .flashcard-front, body.test-open .flashcard-back { min-height: 100px; padding: 16px; }
+  body.test-open #flash-close-btn { margin-top: 0 !important; flex-shrink: 0; }
 }
 
 @media (max-width: 599px) {
