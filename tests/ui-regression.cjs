@@ -280,7 +280,7 @@ async function main() {
             textAlignment: Math.abs((title.top + title.height / 2) - (backText.top + backText.height / 2)),
             duplicateVisible: getComputedStyle(document.querySelector('#ios-nav-title-inline')).visibility !== 'hidden'};
         });
-        assert.ok(compact.height < expanded - 20, `${level} header shrinks at ${width}: ${expanded} -> ${compact.height}`);
+        assert.ok(compact.height < expanded - (width >= 960 ? 8 : 20), `${level} header shrinks at ${width}: ${expanded} -> ${compact.height}`);
         assert.ok(compact.x < 2 && compact.y < 2 && compact.afterBack, 'Title moves beside back button');
         assert.ok(compact.textAlignment < 1, 'Current and previous titles share the same vertical center');
         assert.equal(compact.duplicateVisible, false);
@@ -618,9 +618,13 @@ async function main() {
         }
         return {before, after:samples.at(-1), samples};
       });
+      if (width < 960) {
         assert.ok(heights.before - heights.after > 2, `Header heights differ at ${width}: ${heights.before} -> ${heights.after}`);
         assert.ok(heights.samples.some(height => height > heights.after + 0.5 && height < heights.before - 0.5), 'Header passes through intermediate heights');
         assert.ok(Math.max(...heights.samples.slice(1).map((height,i) => Math.abs(height - heights.samples[i]))) < (heights.before - heights.after) * 0.75, 'No single-frame height jump');
+      } else {
+        assert.ok(heights.before <= 64 && heights.after <= 64, 'Desktop screens keep a small single-row header');
+      }
       const settled = await page.locator('.ios-nav-bar').evaluate(bar => ({
         outer:bar.getBoundingClientRect().height,
         inner:bar.querySelector('.ios-nav-bar-inner').getBoundingClientRect().height,
@@ -638,20 +642,22 @@ async function main() {
         window.scrollTo(0, 0);
       });
       await page.waitForTimeout(800);
-      assert.ok(await page.locator('.ios-nav-bar').evaluate(el => el.getBoundingClientRect().height <= 180));
+      assert.ok(await page.locator('.ios-nav-bar').evaluate(el => el.getBoundingClientRect().height <= 64));
       await page.evaluate(() => window.uiTest.setViewMode('swipe'));
       await page.waitForTimeout(800);
       const desktop = await page.evaluate(() => {
         const bar = document.querySelector('.ios-nav-bar').getBoundingClientRect();
+        const settings = document.querySelector('#settings-btn').getBoundingClientRect();
         const controls = ['view-card-btn','view-swipe-btn','view-table-btn','start-test-btn','view-history-btn','open-extract-btn','export-csv-btn'].map(id => {
           const button = document.getElementById(id), box = button.getBoundingClientRect();
-          return {id, fits:box.left >= bar.left && box.right <= bar.right && box.top >= bar.top && box.bottom <= bar.bottom && box.width >= 24};
+          return {id, sameRow:Math.abs((box.top+box.height/2)-(settings.top+settings.height/2)) < 1,
+            fits:box.left >= bar.left && box.right <= settings.left && box.top >= bar.top && box.bottom <= bar.bottom && box.width >= 24};
         });
         return {height:bar.height,width:bar.width, controls, overflow:document.documentElement.scrollWidth > innerWidth};
       });
-      assert.ok(desktop.width <= width && desktop.height <= 132 && !desktop.overflow,
+      assert.ok(desktop.width <= width && desktop.height <= 52 && !desktop.overflow,
         `Adaptive Shorts header at ${width}: ${JSON.stringify(desktop)}`);
-      assert.ok(desktop.controls.every(button => button.fits), `All actions fit the reference-size header at ${width}: ${JSON.stringify(desktop)}`);
+      assert.ok(desktop.controls.every(button => button.sameRow && button.fits), `All desktop actions align with Settings at ${width}: ${JSON.stringify(desktop)}`);
     }
     await page.evaluate(() => window.uiTest.setViewMode('card'));
     console.log('PASS reference-size desktop header: 960/1024/1440px, all controls fit, compact and default height limits');

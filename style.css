@@ -2150,6 +2150,8 @@ body.shorts-mode-active .app-container {
 body.shorts-mode-active #view-words {
   /* flex layout not needed; swipe view height set by JS */
 }
+/* Animated inactive views must not pan the Shorts frame during focus/resize. */
+body.shorts-mode-active #views-container { overflow: clip !important; }
 
 /* Hidden state for toggles */
 .toggled-hidden {
@@ -3261,11 +3263,37 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 
 /* Use desktop space without scaling the reference text and controls. */
 @media (min-width: 960px) {
-  .ios-nav-bar-inner { max-width: none; }
+  .app-container { padding: 24px 40px 112px; }
+  .ios-nav-bar { top: 16px; border: 1px solid var(--glass-border); border-radius: 14px; margin-bottom: 0; }
+  .ios-nav-bar-inner {
+    max-width: none; display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-rows: minmax(44px, auto); align-items: center;
+    column-gap: 10px; min-height: 60px; padding: 6px 16px;
+  }
+  .ios-nav-inline { display: contents; }
+  .ios-nav-back { grid-column: 1; grid-row: 1; max-width: min(180px, 18vw); }
+  body[data-library-level="0"] .ios-nav-back { display: none; }
+  .ios-nav-title-inline { grid-column: 2; grid-row: 1; text-align: left; }
+  .ios-nav-actions { grid-column: 4; grid-row: 1; }
+  .ios-large-title { display: contents !important; }
+  .ios-large-title-text { font-size: 26px; }
+  .ios-title-slot { grid-column: 2; grid-row: 1; width: auto; height: 32px; }
+  #words-action-wrapper { grid-column: 3; grid-row: 1; min-width: 0; }
+  .words-action-bar { gap: 6px; flex-wrap: nowrap; margin-bottom: 0 !important; }
+  .circle-action-btn { width: auto; min-width: 0; height: 36px; flex-direction: row; gap: 4px; padding: 0 8px; }
+  .circle-action-btn .icon { font-size: 14px; line-height: 1; }
+  .circle-action-btn .label { font-size: 12px; }
+  .ios-nav-bar.compact .ios-nav-bar-inner { min-height: 48px; padding: 2px 16px; }
   .words-card-grid {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
+    align-items: start; gap: 20px; padding-bottom: 40px;
   }
+  .word-card { min-width: 0; padding: 24px; border: 1px solid var(--border); }
+  #view-books, #view-chapters { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)) !important; gap: 20px !important; }
+  .lib-card { min-height: 156px; padding: 28px; }
+  #add-book-wrap, #add-chapter-wrap { margin-bottom: 24px !important; }
+  #add-book-btn, #add-chapter-btn { min-height: 44px; padding: 10px 20px !important; }
   .ios-nav-action-btn:hover, .circle-action-btn:hover, .edit-circle-btn:hover {
     background: var(--bg-tertiary);
   }
@@ -3286,10 +3314,12 @@ button:focus-visible, select:focus-visible, input:focus-visible {
   body.shorts-mode-active .ios-nav-bar { border-radius: 0; margin-bottom: 0; top: 0; }
 }
 
-.app-container { padding: 4px 4px 60px; gap: 4px; }
-.words-card-grid { gap: 0.4rem; }
-.word-card { padding: 0.65rem 0.75rem 0.55rem; }
-.word-card-word { font-size: 1.65rem; }
+@media (max-width: 959px) {
+  .app-container { padding: 4px 4px 60px; gap: 4px; }
+  .words-card-grid { gap: 0.4rem; }
+  .word-card { padding: 0.65rem 0.75rem 0.55rem; }
+  .word-card-word { font-size: 1.65rem; }
+}
 .shorts-controls .shorts-step-btn { flex: 0 0 28px; font-size: 24px; padding: 0; }
 .shorts-controls .swipe-counter { min-width: 44px; }
 .shorts-controls-inner { gap: 2px; }
@@ -3297,11 +3327,11 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 
 /* Keep the original upright card when there is enough vertical space. */
 @media (min-width: 600px) and (min-height: 651px) {
-  body.shorts-mode-active #words-swipe-view { width: min(100%, 520px); margin-inline: auto; }
+  body.shorts-mode-active .swipe-card-wrap { width: min(100%, 520px); margin-inline: auto; }
 }
 
 /* Only short screens need the horizontal card and single-row tools. */
-@media (min-width: 600px) and (max-height: 650px) {
+@media (min-width: 600px) and (max-width: 959px) and (max-height: 650px) {
   body.shorts-mode-active .ios-nav-bar-inner {
     max-width: none; display: grid;
     grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 12px;
@@ -3313,6 +3343,8 @@ button:focus-visible, select:focus-visible, input:focus-visible {
   body.shorts-mode-active .words-action-bar { flex-wrap: nowrap; gap: 4px; margin: 0 !important; }
   body.shorts-mode-active .circle-action-btn { width: 32px; height: 32px; min-width: 0; }
   body.shorts-mode-active .circle-action-btn .label { display: none; }
+}
+@media (min-width: 600px) and (max-height: 650px) {
   body.shorts-mode-active #lib-views-container { margin-top: 8px; }
   body.shorts-mode-active .swipe-card { overflow: hidden; }
   body.shorts-mode-active .swipe-card-content {

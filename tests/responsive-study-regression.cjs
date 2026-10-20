@@ -32,8 +32,10 @@ module.exports = async function verifyResponsiveStudy(page) {
     referenceFont ||= size.font;
     referenceButton ||= [size.buttonWidth,size.buttonHeight];
     assert.ok(Math.abs(size.width-width)<1 && !size.overflow, `Page uses available width at ${width}: ${JSON.stringify(size)}`);
-    assert.equal(size.font, referenceFont, 'Reading text does not enlarge at a desktop breakpoint');
-    assert.deepEqual([size.buttonWidth,size.buttonHeight],referenceButton, 'GUI buttons keep the reference size as the page grows');
+    if (width<960) {
+      assert.equal(size.font, referenceFont, 'Mobile reading text keeps the reference size');
+      assert.deepEqual([size.buttonWidth,size.buttonHeight],referenceButton, 'Mobile GUI buttons keep the reference size');
+    }
     console.log(`PASS fluid page with reference GUI sizes: ${width}x${height}`);
   }
   for (const [width,height] of [[844,390],[667,375],[1024,600],[1280,540],[1024,768],[1440,900],[506,430],[390,360]]) {
@@ -59,7 +61,8 @@ module.exports = async function verifyResponsiveStudy(page) {
         titleVisible:title.checkVisibility() && glyphs.width>0 && glyphs.height>0,
         titleText:title.textContent.trim(),titleTop:titleBox.top,titleBottom:titleBox.bottom,
         headerBottom:document.querySelector('.ios-nav-bar').getBoundingClientRect().bottom,
-        left:a.left,right:b.left,cardBottom:card.getBoundingClientRect().bottom,cardHeight:card.clientHeight,
+        left:a.left,right:b.left,cardCenter:(card.getBoundingClientRect().left+card.getBoundingClientRect().right)/2,
+        cardBottom:card.getBoundingClientRect().bottom,cardHeight:card.clientHeight,
         barTop:document.querySelector('#hide-toggle-bar').getBoundingClientRect().top,
         font:card.style.fontSize,overflow:document.documentElement.scrollWidth > innerWidth,
         viewport:[innerWidth,innerHeight,visualViewport.height],headerClass:document.querySelector('.ios-nav-bar').className,
@@ -75,6 +78,7 @@ module.exports = async function verifyResponsiveStudy(page) {
       assert.ok(layout.right > layout.left+100, 'Short wide card has side-by-side content');
     } else {
       assert.equal(layout.columns,'none', 'Tall screens keep the original vertical Shorts card');
+      assert.ok(Math.abs(layout.cardCenter-width/2)<2,`Vertical Shorts remains centered: ${JSON.stringify(layout)}`);
     }
     const readingTarget = horizontal ? '.swipe-card-details' : '#swipe-card';
     if (process.env.UI_TEST_WEBKIT) {
@@ -102,6 +106,10 @@ module.exports = async function verifyResponsiveStudy(page) {
     await page.locator('#prev-swipe-btn').click();
     await page.waitForTimeout(450);
     assert.equal(await page.locator('#swipe-counter').textContent(),'1 / 3');
+    if (!horizontal) {
+      const center=await page.locator('#swipe-card').evaluate(el=>{const r=el.getBoundingClientRect();return (r.left+r.right)/2;});
+      assert.ok(Math.abs(center-width/2)<2,`Reading and navigation keep the vertical card centered at ${width}: ${center}`);
+    }
     if (process.env.UI_TEST_ARTIFACTS) await page.screenshot({path:path.join(process.env.UI_TEST_ARTIFACTS,`shorts-${width}x${height}.png`)});
     console.log(`PASS adaptive Shorts card, reading scroll and explicit navigation: ${width}x${height}`);
   }
@@ -149,4 +157,32 @@ module.exports = async function verifyResponsiveStudy(page) {
   assert.equal(await page.locator('body').evaluate(el => el.classList.contains('test-open')),true);
   await page.locator('#flash-close-btn').click();
   console.log('PASS filled web viewport without browser fullscreen API');
+  for (const width of [390,960,1440,1920]) {
+    await page.setViewportSize({width,height:900});
+    for (const level of ['books','chapters']) {
+      await page.evaluate(level => {
+        window.uiTest.setViewMode('card');
+        if (level==='books') window.uiTest.loadBooks();
+        else window.uiTest.loadChapters('book','영어 단어장');
+        window.snapshotEntries.at(-1).deliver(Array.from({length:6},(_,i)=>({name:`${level} ${i+1}`})));
+      },level);
+      await page.waitForTimeout(850);
+      const layout=await page.locator(`#view-${level}`).evaluate(el=>{
+        const first=el.children[0].getBoundingClientRect(), second=el.children[1].getBoundingClientRect();
+        return {firstTop:first.top,secondTop:second.top,firstLeft:first.left,secondLeft:second.left,
+          headerHeight:document.querySelector('.ios-nav-bar').getBoundingClientRect().height,
+          overflow:document.documentElement.scrollWidth>innerWidth};
+      });
+      assert.equal(layout.overflow,false);
+      if (width>=960) {
+        assert.ok(Math.abs(layout.firstTop-layout.secondTop)<1 && layout.secondLeft>layout.firstLeft,
+          `Desktop ${level} uses multiple columns: ${JSON.stringify(layout)}`);
+        assert.ok(layout.headerHeight<=64,'Desktop library keeps the single-row header');
+      } else {
+        assert.ok(layout.secondTop>layout.firstTop,'Mobile library keeps its vertical list');
+      }
+      if (process.env.UI_TEST_ARTIFACTS) await page.screenshot({path:path.join(process.env.UI_TEST_ARTIFACTS,`${level}-${width}.png`)});
+      console.log(`PASS ${level}: restored desktop grid and mobile list at ${width}px`);
+    }
+  }
 };
