@@ -1,6 +1,6 @@
 // Run with Node and Playwright available through NODE_PATH.
 // Firebase is replaced with local fixtures; no account or remote data is changed.
-const { chromium } = require('playwright');
+const { chromium, webkit } = require('playwright');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -13,6 +13,7 @@ async function main() {
     .flatMap(match => match[1].split(',').map(name => name.trim()).filter(Boolean));
   const stubs = 'const ' + imports.map(name => `${name} = ${
     name === 'GoogleAuthProvider' ? 'class {}' :
+    name === 'initializeFirestore' ? '(_app, settings) => { window.firestoreSettings = settings; return {}; }' :
     name === 'httpsCallable' ? '() => async data => { (window.aiFixtureRequests ||= []).push(data); if (window.deferAiFixture) return new Promise(resolve => {window.resolveAiFixture = resolve;}); return {data: data.action === "appeal" ? {isApproved:true,fromCache:false} : {text:"fixture report"}}; }' :
     name === 'onAuthStateChanged' ? '(auth, callback) => { window.authFixture = callback; }' :
     name === 'getDocs' ? 'async () => ({empty: !(window.historyFixture?.length), forEach(callback) { (window.historyFixture || []).forEach(data => callback({data: () => data})); }})' :
@@ -30,10 +31,14 @@ async function main() {
       seedReport() {selectedBookId = 'book'; selectedChapterId = 'chapter'; currentTestRecord = {correct: 1, total: 1, wrongWords: [], mode: 'quiz', dir: 'word2meaning'};},
       seedAppeal() {selectedBookId = 'book'; selectedChapterId = 'chapter'; shortCurrentData = {_path:'users/fixture/books/book/chapters/chapter/words/word',word:'apple',meaning:'사과'}; document.querySelector('#short-answer-input').value = '사과';}};`;
   new vm.Script(instrumented, {filename: 'instrumented-app.js'});
-  const browser = await chromium.launch({headless: true,
-    executablePath: process.env.UI_TEST_BROWSER || 'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+  const browser = process.env.UI_TEST_WEBKIT ? await webkit.launch({headless: true}) :
+    await chromium.launch({headless: true,
+      executablePath: process.env.UI_TEST_BROWSER || 'C:/Program Files/Google/Chrome/Application/chrome.exe'});
   try {
-    const page = await browser.newPage(process.env.UI_TEST_ANDROID ? {
+    const page = await browser.newPage(process.env.UI_TEST_WEBKIT ? {
+      viewport:{width:390,height:900}, deviceScaleFactor:3, isMobile:true, hasTouch:true,
+      userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1'
+    } : process.env.UI_TEST_ANDROID ? {
       viewport:{width:390,height:900}, deviceScaleFactor:3, isMobile:true, hasTouch:true,
       userAgent:'Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/AP2A.240905.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Mobile Safari/537.36'
     } : {});
@@ -56,6 +61,7 @@ async function main() {
     });
     assert.equal(await page.evaluate(() => localStorage.getItem('gemini_api_key')), null);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('superword_ai_key')), null);
+    assert.equal(await page.evaluate(() => !!window.firestoreSettings.experimentalForceLongPolling), !!process.env.UI_TEST_WEBKIT);
     assert.equal(await page.locator('#lib-views-container').evaluate(el => !!el.closest('.ios-nav-bar')), false);
     assert.equal(await page.locator('#settings-modal').evaluate(el => el.parentElement.tagName), 'BODY');
     await page.evaluate(() => {
@@ -69,6 +75,7 @@ async function main() {
         front: `example${i}`, back: '📌 뜻\n예시\n\n📖 예문\n• This is an example.', order: i
       })));
     });
+    if (!process.env.UI_TEST_NAV_ONLY) {
     const dialogs = ['settings-modal', 'test-modal', 'history-modal', 'export-modal'];
     for (const width of [1440, 1024, 768, 390, 320]) {
       await page.setViewportSize({width, height: 900});
@@ -86,6 +93,7 @@ async function main() {
       const styles = [];
       for (const id of dialogs) {
         await page.evaluate(id => window.uiTest.openModal(document.getElementById(id)), id);
+        await page.waitForFunction(id => document.getElementById(id).classList.contains('show'), id);
         if (width === 390) {
           const minBottom = await page.evaluate(async id => {
             const sheet = document.querySelector(`#${id} .sheet-modal`);
@@ -119,7 +127,9 @@ async function main() {
           await page.screenshot({path: path.join(process.env.UI_TEST_ARTIFACTS, `settings-${width}.png`)});
         }
         await page.keyboard.press('Escape');
-        await page.waitForTimeout(450);
+        await page.waitForFunction(() => !document.body.classList.contains('modal-open'), null, {timeout:3000}).catch(async error => {
+          throw new Error(`${id} failed to close: ${JSON.stringify(await page.evaluate(() => [...document.querySelectorAll('.modal-screen.show')].map(el => el.id)))}; page errors: ${errors.join('; ')}; ${error.message}`);
+        });
         assert.equal(await page.locator('body').evaluate(el => el.classList.contains('modal-open')), false);
       }
       styles.forEach(style => assert.deepEqual(style, styles[0], `Dialog consistency at ${width}`));
@@ -194,6 +204,43 @@ async function main() {
     assert.ok(!(await page.locator('#view-chapters').textContent()).includes('로딩 중'));
     assert.equal(await page.evaluate(() => window.snapshotEntries.filter(entry => !entry.cancelled).length), 1);
     console.log('PASS delayed snapshots: repeated same/different book entry, one active listener');
+    const recovery = await page.evaluate(() => {
+      const originalSetTimeout = window.setTimeout;
+      const deadlines = [];
+      window.setTimeout = (callback, delay, ...args) => {
+        if (delay === 15000) deadlines.push(callback);
+        return originalSetTimeout(callback, delay, ...args);
+      };
+      const results = [];
+      window.deferSnapshots = true;
+      try {
+        for (const [container, load] of [
+          ['#view-books', () => window.uiTest.loadBooks()],
+          ['#view-chapters', () => window.uiTest.loadChapters('book', '영어 단어장')],
+          ['#words-card-view', () => window.uiTest.loadWords('book', 'chapter', 'Day 01')]
+        ]) {
+          load();
+          const expired = deadlines.at(-1);
+          expired();
+          const target = document.querySelector(container);
+          const timeoutShown = target.textContent.includes('연결이 지연');
+          target.querySelector('.library-retry').click();
+          // A cancelled request must never replace the newer loading screen.
+          expired();
+          const cancelledIgnored = target.textContent.includes('로딩 중');
+          deadlines.at(-1)();
+          window.snapshotEntries.at(-1).deliver();
+          results.push({timeoutShown, cancelledIgnored,
+            recovered: !target.textContent.includes('로딩 중') && !target.querySelector('.library-retry')});
+        }
+      } finally {
+        window.setTimeout = originalSetTimeout;
+        window.deferSnapshots = false;
+      }
+      return results;
+    });
+    assert.deepEqual(recovery, Array.from({length:3}, () => ({timeoutShown:true, cancelledIgnored:true, recovered:true})));
+    console.log('PASS loading deadline, retry, late recovery and cancelled deadline isolation at all three levels');
     for (const width of [390, 1440]) {
       await page.setViewportSize({width, height: 900});
       for (const level of ['chapters', 'words']) {
@@ -204,7 +251,7 @@ async function main() {
         }, level);
         await page.waitForTimeout(400);
         const expanded = await page.locator('.ios-nav-bar').evaluate(el => el.getBoundingClientRect().height);
-        await page.evaluate(() => window.scrollTo(0, 350));
+        await page.evaluate(() => window.scrollTo({top:350, behavior:'instant'}));
         await page.waitForTimeout(650);
         const compact = await page.evaluate(() => {
           const title = document.querySelector('#ios-large-title-text').getBoundingClientRect();
@@ -216,11 +263,11 @@ async function main() {
             textAlignment: Math.abs((title.top + title.height / 2) - (backText.top + backText.height / 2)),
             duplicateVisible: getComputedStyle(document.querySelector('#ios-nav-title-inline')).visibility !== 'hidden'};
         });
-        assert.ok(compact.height < expanded - (width >= 960 ? 8 : 20), `${level} header shrinks at ${width}`);
+        assert.ok(compact.height < expanded - (width >= 960 ? 8 : 20), `${level} header shrinks at ${width}: ${expanded} -> ${compact.height}`);
         assert.ok(compact.x < 2 && compact.y < 2 && compact.afterBack, 'Title moves beside back button');
         assert.ok(compact.textAlignment < 1, 'Current and previous titles share the same vertical center');
         assert.equal(compact.duplicateVisible, false);
-        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.evaluate(() => window.scrollTo({top:0, behavior:'instant'}));
         await page.waitForTimeout(650);
         assert.equal(await page.locator('.ios-nav-bar').evaluate(el => el.classList.contains('compact')), false);
       }
@@ -320,12 +367,15 @@ async function main() {
       assert.ok(gap >= 18, `${level} add button has spacing below header`);
     }
     console.log('PASS add book/chapter spacing and bottom-sheet animation without overshoot');
+    }
+    await page.setViewportSize({width:390, height:900});
+    await page.waitForTimeout(400);
     const headerMotion = await page.evaluate(async () => {
       const inner = document.querySelector('.ios-nav-bar-inner');
       window.uiTest.loadBooks();
       window.uiTest.loadChapters('book', '영어 단어장');
       await new Promise(requestAnimationFrame);
-      const forward = document.querySelector('.ios-title-label').getAnimations().map(animation => animation.effect.getKeyframes()[0].translate).filter(Boolean);
+      const forward = document.querySelector('.ios-title-label').getAnimations().map(animation => animation.effect.getKeyframes()[0].transform).filter(Boolean);
       window.uiTest.loadWords('book', 'chapter', 'Day 01');
       await new Promise(requestAnimationFrame);
       window.uiTest.loadChapters('book', '영어 단어장');
@@ -339,7 +389,7 @@ async function main() {
       await new Promise(requestAnimationFrame);
       return {forward, transfer, text, fixedAnimations, ghostCount:document.querySelectorAll('.library-nav-ghost').length};
     });
-    assert.deepEqual(headerMotion.forward, ['-100%']);
+    assert.deepEqual(headerMotion.forward, ['translate(-100%, 0px)']);
     assert.equal(headerMotion.text, '영어 단어장');
     assert.match(headerMotion.transfer, /^translate\(/);
     assert.ok(parseFloat(headerMotion.transfer.split(',')[1]) > 0, 'Previous menu name moves downward to the current title');
@@ -380,19 +430,33 @@ async function main() {
       });
       assert.deepEqual(repeated.problems, [], `Back labels survive repeated interrupted navigation at ${width}`);
       assert.equal(repeated.duration, 520, 'Title movement uses the longer duration');
-      await page.waitForTimeout(650);
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      await page.waitForFunction(() => !document.querySelector('.library-nav-ghost'));
       assert.equal(await page.locator('#ios-back-text').textContent(), '단어장 목록');
       assert.equal(await page.locator('#ios-back-text').evaluate(el => getComputedStyle(el).opacity), '1');
       assert.equal(await page.locator('.library-nav-ghost').count(), 0);
-      await page.evaluate(() => window.uiTest.loadWords('book', 'chapter', 'Day 01'));
-      await page.waitForTimeout(240);
+      await page.evaluate(async () => {
+        window.uiTest.loadWords('book', 'chapter', 'Day 01');
+        await new Promise(requestAnimationFrame);
+        const movement = document.querySelector('.library-nav-ghost').getAnimations()[0];
+        movement.pause();
+        movement.currentTime = 240;
+        await new Promise(requestAnimationFrame);
+      });
       assert.equal(await page.locator('#ios-back-text').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'Destination back label waits for transfer arrival');
       assert.equal(await page.locator('.library-nav-ghost').isVisible(), true);
-      await page.waitForTimeout(400);
+      await page.evaluate(() => document.querySelector('.library-nav-ghost').getAnimations()[0].play());
+      await page.waitForFunction(() => !document.querySelector('#ios-back-text').classList.contains('library-nav-pending'));
       assert.equal(await page.locator('#ios-back-text').isVisible(), true);
       assert.equal(await page.locator('#ios-back-text').textContent(), '영어 단어장');
-      await page.evaluate(() => document.querySelector('#ios-back-btn').click());
-      await page.waitForTimeout(240);
+      await page.evaluate(async () => {
+        document.querySelector('#ios-back-btn').click();
+        await new Promise(requestAnimationFrame);
+        const movement = document.querySelector('.library-nav-ghost').getAnimations()[0];
+        movement.pause();
+        movement.currentTime = 240;
+        await new Promise(requestAnimationFrame);
+      });
       assert.equal(await page.locator('#ios-large-title-text').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'Destination current title waits for transfer arrival');
       assert.equal(await page.locator('.library-nav-ghost').isVisible(), true);
       const mobileFont = await page.evaluate(() => {
@@ -409,35 +473,69 @@ async function main() {
       assert.equal(mobileFont.scaleX, 1);
       assert.equal(mobileFont.scaleY, 1);
       const handoff = await page.evaluate(async () => {
-        let last = null;
-        const start = performance.now();
-        while (performance.now() - start < 450) {
-          await new Promise(requestAnimationFrame);
           const ghost = document.querySelector('.library-nav-ghost');
-          if (!ghost) break;
           const animation = ghost.getAnimations()[0];
-          if (!animation || animation.currentTime < 470) continue;
+          animation.currentTime = 519;
+          await new Promise(requestAnimationFrame);
           const title = document.querySelector('#ios-large-title-text');
           const a = ghost.getBoundingClientRect(), b = title.getBoundingClientRect();
           const ghostStyle = getComputedStyle(ghost), titleStyle = getComputedStyle(title);
           const ghostRange = document.createRange(), titleRange = document.createRange();
           ghostRange.selectNodeContents(ghost);
           titleRange.selectNodeContents(title.querySelector('.ios-title-label'));
-          last = {x:Math.abs(a.left-b.left), y:Math.abs(a.top-b.top),
+          const last = {x:Math.abs(a.left-b.left), y:Math.abs(a.top-b.top),
             glyphWidth:Math.abs(ghostRange.getBoundingClientRect().width-titleRange.getBoundingClientRect().width),
             sameFont:ghostStyle.fontFamily === titleStyle.fontFamily,
             letterSpacing:Math.abs(parseFloat(ghostStyle.letterSpacing)-parseFloat(titleStyle.letterSpacing))};
-        }
+          animation.play();
         return last;
       });
       assert.ok(handoff && handoff.sameFont && handoff.letterSpacing < 0.05, `Transfer typography matches the destination at ${width}: ${JSON.stringify(handoff)}`);
       assert.ok(handoff.x < 1 && handoff.y < 1 && handoff.glyphWidth < 1, `Transfer handoff has no position/text-width jump at ${width}: ${JSON.stringify(handoff)}`);
-      await page.waitForTimeout(120);
+      await page.waitForFunction(() => !document.querySelector('.library-nav-ghost'));
       assert.equal(await page.locator('#ios-large-title-text').isVisible(), true);
       assert.equal(await page.locator('#ios-back-text').textContent(), '단어장 목록');
       assert.equal(await page.locator('.library-nav-ghost').count(), 0);
     }
     console.log('PASS full root label, repeated interrupted navigation, visible resting back label, longer motion');
+    const restoredNavigation = await page.evaluate(async () => {
+      window.uiTest.loadChapters('book', '영어 단어장');
+      await new Promise(requestAnimationFrame);
+      window.uiTest.loadWords('book', 'chapter', 'Day 01');
+      await new Promise(requestAnimationFrame);
+      const ghost = document.querySelector('.library-nav-ghost');
+      const movement = ghost.getAnimations()[0];
+      const finish = movement.onfinish;
+      movement.onfinish = null;
+      movement.finish();
+      await new Promise(requestAnimationFrame);
+      const target = document.querySelector('#ios-back-text');
+      const a = ghost.getBoundingClientRect(), b = target.getBoundingClientRect();
+      const held = {fill:movement.effect.getTiming().fill, x:Math.abs(a.left-b.left), y:Math.abs(a.top-b.top)};
+      finish();
+      const revealedBeforeRemoval = getComputedStyle(target).visibility === 'visible' && ghost.isConnected;
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+      const removed = !ghost.isConnected;
+      window.uiTest.loadChapters('book', '영어 단어장');
+      await new Promise(requestAnimationFrame);
+      document.querySelector('.library-nav-ghost')?.getAnimations()[0].pause();
+      document.dispatchEvent(new Event('visibilitychange'));
+      const resumed = !document.querySelector('.library-nav-ghost') && !document.querySelector('.library-nav-pending');
+      window.uiTest.loadWords('book', 'chapter', 'Day 01');
+      await new Promise(requestAnimationFrame);
+      window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted:true}));
+      return {held, revealedBeforeRemoval, removed, resumed,
+        restored:!document.querySelector('.library-nav-ghost') && !document.querySelector('.library-nav-pending')};
+    });
+    assert.equal(restoredNavigation.held.fill, 'both');
+    assert.ok(restoredNavigation.held.x < 1 && restoredNavigation.held.y < 1, 'Finished transfer holds its destination while finish dispatch is delayed');
+    for (const key of ['revealedBeforeRemoval','removed','resumed','restored']) assert.equal(restoredNavigation[key], true, key);
+    console.log('PASS filled endpoint, painted-label handoff, tab resume and back/forward cache cleanup');
+    if (process.env.UI_TEST_NAV_ONLY) {
+      assert.deepEqual(errors, []);
+      return;
+    }
     await page.setViewportSize({width:390, height:900});
     for (const mode of ['card', 'swipe']) {
       await page.evaluate(mode => {
@@ -451,11 +549,11 @@ async function main() {
         await new Promise(requestAnimationFrame);
         const exit = document.querySelector('.library-nav-exit');
         return {text:exit?.textContent,
-          end:exit?.firstElementChild.getAnimations()[0]?.effect.getKeyframes().at(-1).translate,
+          end:exit?.firstElementChild.getAnimations()[0]?.effect.getKeyframes().at(-1).transform,
           fixed:document.querySelector('#settings-btn').getAnimations().length};
       });
       assert.equal(departure.text, 'Day 01');
-      assert.equal(departure.end, mode === 'card' ? '-100%' : '0px -100%');
+      assert.equal(departure.end, mode === 'card' ? 'translate(-100%, 0px)' : 'translate(0px, -100%)');
       assert.equal(departure.fixed, 0);
       await page.waitForTimeout(650);
       assert.equal(await page.locator('.library-nav-exit').count(), 0);

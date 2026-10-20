@@ -51,8 +51,12 @@ const firebaseApp = initializeApp({
   appId: "1:509235514160:web:87282a03a70ec2041696f5",
   measurementId: "G-Z0C9CQT4T7"
 });
+const isIOSWebKit = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const db = initializeFirestore(firebaseApp, {
-  localCache: memoryLocalCache()
+  localCache: memoryLocalCache(),
+  // Avoid a stalled streaming transport on iOS, including iPad desktop mode.
+  ...(isIOSWebKit ? { experimentalForceLongPolling: true } : {})
 });
 const auth = getAuth(firebaseApp);
 const callStudyAi = httpsCallable(getFunctions(firebaseApp, 'asia-northeast3'), 'studyAi', {timeout: 60000});
@@ -327,8 +331,11 @@ let pendingLibraryNavDirection = 0;
 let libraryNavEpoch = 0;
 let libraryNavRevealTimer = null;
 let libraryNavTransfer = null;
+let libraryNavHandoffFrame = 0;
 function clearLibraryNavigationMotion() {
   libraryNavEpoch++;
+  cancelAnimationFrame(libraryNavHandoffFrame);
+  libraryNavHandoffFrame = 0;
   clearTimeout(libraryNavRevealTimer);
   libraryNavAnimations.forEach(animation => { animation.onfinish = null; animation.cancel(); });
   libraryNavAnimations = [];
@@ -368,7 +375,7 @@ function libraryTransferKeyframes(from, returning) {
 }
 function animateLibraryNavigation(direction) {
   if (!iosNavBar || !currentUser || !iosNavBar.getClientRects().length || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const timing = { duration: 520, easing: 'cubic-bezier(0.32, 0, 0.2, 1)' };
+  const timing = { duration: 520, easing: 'cubic-bezier(0.32, 0, 0.2, 1)', fill: 'both' };
   const epoch = libraryNavEpoch;
   const returning = direction < 0 && libraryNavSnapshot?.backVisible;
   const backVisible = iosBackBtn.style.visibility !== 'hidden';
@@ -394,8 +401,8 @@ function animateLibraryNavigation(direction) {
     iosNavBar.appendChild(exit);
     libraryNavExit = exit;
     const departure = label.animate([
-      { translate: '0 0' },
-      { translate: libraryNavSnapshot.compact ? '0 -100%' : '-100% 0' }
+      { transform: 'translate(0, 0)' },
+      { transform: libraryNavSnapshot.compact ? 'translate(0, -100%)' : 'translate(-100%, 0)' }
     ], timing);
     departure.onfinish = () => {
       exit.remove();
@@ -405,7 +412,7 @@ function animateLibraryNavigation(direction) {
     libraryNavAnimations.push(departure);
   }
   const slideIn = label => {
-    const animation = label.animate([{ translate: '-100% 0' }, { translate: '0 0' }], timing);
+    const animation = label.animate([{ transform: 'translate(-100%, 0)' }, { transform: 'translate(0, 0)' }], timing);
     animation.onfinish = () => animation.cancel();
     libraryNavAnimations.push(animation);
   };
@@ -438,10 +445,18 @@ function animateLibraryNavigation(direction) {
   libraryNavGhost = ghost;
   const movement = ghost.animate(libraryTransferKeyframes(from, returning), timing);
   movement.onfinish = () => {
-    if (epoch === libraryNavEpoch) destination.classList.remove('library-nav-pending');
+    if (epoch !== libraryNavEpoch) return;
+    destination.classList.remove('library-nav-pending');
     if (libraryNavTransfer?.movement === movement) libraryNavTransfer = null;
-    ghost.remove();
-    movement.cancel();
+    // Keep the filled final frame until WebKit has painted the real label.
+    libraryNavHandoffFrame = requestAnimationFrame(() => {
+      libraryNavHandoffFrame = requestAnimationFrame(() => {
+        libraryNavHandoffFrame = 0;
+        if (epoch !== libraryNavEpoch) return;
+        ghost.remove();
+        movement.cancel();
+      });
+    });
   };
   libraryNavAnimations.push(movement);
   libraryNavTransfer = { movement, from, returning };
@@ -497,6 +512,18 @@ function resetLibraryNavigation() {
 }
 document.addEventListener('scroll', scheduleLibraryTitle, { passive: true });
 window.addEventListener('resize', scheduleLibraryTitle);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    clearLibraryNavigationMotion();
+    scheduleLibraryTitle();
+  }
+});
+window.addEventListener('pageshow', event => {
+  if (event.persisted) {
+    clearLibraryNavigationMotion();
+    scheduleLibraryTitle();
+  }
+});
 new ResizeObserver(() => {
   const inner = document.querySelector('.ios-nav-bar-inner');
   const contentHeight = inner.getBoundingClientRect().height;
@@ -787,6 +814,36 @@ document.addEventListener('touchend', (e) => {
 document.addEventListener('touchcancel', cancelBackSwipe, { passive: true });
 
 // ─── Load Books ───────────────────────────────────────────────────────────────
+function subscribeLibrarySnapshot(reference, render, showError, container, retry) {
+  let active = true;
+  let retryButton = null;
+  const fail = error => {
+    if (!active) return;
+    clearTimeout(timer);
+    retryButton?.remove();
+    showError(error);
+    retryButton = document.createElement('button');
+    retryButton.type = 'button';
+    retryButton.className = 'small-btn library-retry';
+    retryButton.textContent = '다시 시도';
+    retryButton.onclick = retry;
+    container.appendChild(retryButton);
+  };
+  const timer = setTimeout(() => fail(new Error('연결이 지연되고 있습니다. 네트워크를 확인하고 다시 시도해 주세요.')), 15000);
+  const unsubscribe = onSnapshot(reference, snapshot => {
+    if (!active) return;
+    clearTimeout(timer);
+    retryButton?.remove();
+    render(snapshot);
+  }, fail);
+  return () => {
+    active = false;
+    clearTimeout(timer);
+    retryButton?.remove();
+    unsubscribe();
+  };
+}
+
 function loadBooks() {
   resetLibraryNavigation();
   if (typeof pushHistoryState === 'function') pushHistoryState(0, {});
@@ -807,7 +864,7 @@ function loadBooks() {
 
   if (!unsubBooks) {
     viewBooks.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:var(--text-secondary);">로딩 중...</p>';
-    unsubBooks = onSnapshot(collection(db, `users/${currentUser.uid}/books`), (snap) => {
+    unsubBooks = subscribeLibrarySnapshot(collection(db, `users/${currentUser.uid}/books`), (snap) => {
       viewBooks.innerHTML = '';
       if (snap.empty) {
         viewBooks.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1;text-align:center;">저장된 단어장이 없습니다. 위의 [+ 새 단어장 만들기] 버튼을 눌러 시작하세요!</p>';
@@ -834,7 +891,7 @@ function loadBooks() {
     }, (e) => {
       console.error(e);
       viewBooks.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--danger);">오류: ${escapeHTML(e.message)}</p>`;
-    });
+    }, viewBooks, loadBooks);
   }
 }
 
@@ -864,7 +921,7 @@ function loadChapters(bookId, bookName) {
 
   if (!unsubChapters) {
     viewChapters.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:var(--text-secondary);">로딩 중...</p>';
-    unsubChapters = onSnapshot(collection(db, `users/${currentUser.uid}/books/${bookId}/chapters`), (snap) => {
+    unsubChapters = subscribeLibrarySnapshot(collection(db, `users/${currentUser.uid}/books/${bookId}/chapters`), (snap) => {
       viewChapters.innerHTML = '';
       if (snap.empty) {
         viewChapters.innerHTML = `<div class="empty-state" style="grid-column: 1 / -1;">
@@ -895,7 +952,7 @@ function loadChapters(bookId, bookName) {
     }, (e) => {
       console.error(e);
       viewChapters.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--danger);">오류: ${escapeHTML(e.message)}</p>`;
-    });
+    }, viewChapters, () => loadChapters(bookId, bookName));
   }
 }
 
@@ -933,7 +990,7 @@ function loadWords(bookId, chapterId, chapterName) {
     wordsTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">로딩 중...</td></tr>';
 
     const q = query(collection(db, `users/${currentUser.uid}/books/${bookId}/chapters/${chapterId}/words`), orderBy('order'));
-    unsubWords = onSnapshot(q, (snap) => {
+    unsubWords = subscribeLibrarySnapshot(q, (snap) => {
       currentLoadedWords = [];
       if (selectAllWords) selectAllWords.checked = false;
       if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
@@ -952,7 +1009,8 @@ function loadWords(bookId, chapterId, chapterName) {
     }, (e) => {
       console.error(e);
       wordsCardView.innerHTML = `<p style="text-align:center;color:var(--danger);padding:2rem;">오류: ${escapeHTML(e.message)}</p>`;
-    });
+      wordsTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--danger);">오류: ${escapeHTML(e.message)}</td></tr>`;
+    }, wordsCardView, () => loadWords(bookId, chapterId, chapterName));
   }
 }
 

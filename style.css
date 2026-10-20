@@ -229,6 +229,9 @@ body[data-theme="light"] .bg-orb { opacity: 0.12; }
   font-weight: 700;
   line-height: 1.2;
   transform-origin: left top;
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 .library-nav-exit {
   position: absolute;
