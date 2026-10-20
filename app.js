@@ -372,9 +372,6 @@ function libraryTransferKeyframes(from, returning) {
     { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(1)`,
       clipPath: 'inset(0px 0px 0px 0px)', color: style.color }
   ];
-  // On iOS pushes, keep the same title transfer without animating a clip mask
-  // on the moving text layer. Its fixed overflow box already clips long labels.
-  if (isIOSWebKit && !returning) frames.forEach(frame => { delete frame.clipPath; });
   return frames;
 }
 function animateLibraryNavigation(direction) {

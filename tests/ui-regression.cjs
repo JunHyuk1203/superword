@@ -461,7 +461,7 @@ async function main() {
       assert.deepEqual(forwardMotion.samples, [true, true, true, true], 'Flying title remains visible throughout the push');
       assert.equal(forwardMotion.exits, 0, 'Forward title transfers instead of exiting sideways');
       if (width < 960) assert.ok(forwardMotion.y < 0, 'Expanded current title moves upward into the back label');
-      assert.equal(forwardMotion.clipAnimated, !process.env.UI_TEST_WEBKIT, 'iOS forward fix does not change Android/desktop clipping');
+      assert.equal(forwardMotion.clipAnimated, true, 'Keep the original clipping animation on every platform');
       assert.equal(await page.locator('#ios-back-text').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'Destination back label waits for transfer arrival');
       assert.equal(await page.locator('.library-nav-ghost').isVisible(), true);
       await page.evaluate(() => document.querySelector('.library-nav-ghost').getAnimations()[0].play());
