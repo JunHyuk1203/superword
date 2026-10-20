@@ -28,17 +28,21 @@ module.exports = async function verifyResponsiveStudy(page) {
       font:getComputedStyle(document.querySelector('.word-card-word')).fontSize,
       buttonWidth:document.querySelector('#start-test-btn').getBoundingClientRect().width,
       buttonHeight:document.querySelector('#start-test-btn').getBoundingClientRect().height,
+      cssButtonHeight:parseFloat(getComputedStyle(document.querySelector('#start-test-btn')).height),
+      scale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gui-scale')),
       overflow:document.documentElement.scrollWidth > innerWidth}));
     referenceFont ||= size.font;
     referenceButton ||= [size.buttonWidth,size.buttonHeight];
     assert.ok(Math.abs(size.width-width)<1 && !size.overflow, `Page uses available width at ${width}: ${JSON.stringify(size)}`);
+    assert.equal(size.scale,width<960 ? 0.7 : 1,'Only the mobile GUI is scaled down 30%');
+    assert.ok(Math.abs(size.buttonHeight-size.cssButtonHeight*size.scale)<1,'Buttons render at the requested GUI scale');
     if (width<960) {
       assert.equal(size.font, referenceFont, 'Mobile reading text keeps the reference size');
       assert.deepEqual([size.buttonWidth,size.buttonHeight],referenceButton, 'Mobile GUI buttons keep the reference size');
     }
     console.log(`PASS fluid page with reference GUI sizes: ${width}x${height}`);
   }
-  for (const [width,height] of [[844,390],[667,375],[1024,600],[1280,540],[1024,768],[1440,900],[506,430],[390,360]]) {
+  for (const [width,height] of [[844,390],[667,375],[1024,600],[1280,540],[1024,768],[1366,768],[1440,801],[1440,900],[506,430],[390,360]]) {
     await page.setViewportSize({width,height});
     await page.evaluate(() => window.uiTest.setViewMode('swipe'));
     await page.waitForFunction(() => {
@@ -72,7 +76,7 @@ module.exports = async function verifyResponsiveStudy(page) {
     assert.equal(layout.font,'100%', 'Card uses readable text without percentage shrinking');
     assert.ok(layout.titleVisible && layout.titleText === 'Day 01' && layout.titleTop>=0 && layout.titleBottom<=layout.headerBottom,
       `Real unit title remains rendered at ${width}x${height}: ${JSON.stringify(layout)}`);
-    const horizontal = width >= 480 && height <= 650;
+    const horizontal = width >= 480 && height <= (width>=960 ? 800 : 650);
     if (horizontal) {
       assert.equal(layout.columns.split(' ').length,2);
       assert.ok(layout.right > layout.left+100, 'Short wide card has side-by-side content');
@@ -106,6 +110,27 @@ module.exports = async function verifyResponsiveStudy(page) {
     await page.locator('#prev-swipe-btn').click();
     await page.waitForTimeout(450);
     assert.equal(await page.locator('#swipe-counter').textContent(),'1 / 3');
+    const touchSwipe = async (direction, crossEdge = false) => {
+      await page.locator(readingTarget).evaluate((el,{direction,crossEdge})=>{
+        const max=el.scrollHeight-el.clientHeight;
+        el.scrollTop=direction>0 ? (crossEdge ? max/2 : max) : 0;
+        const emit=(type,y)=>{
+          const event=new Event(type,{bubbles:true});
+          Object.defineProperties(event,{touches:{value:type==='touchend'?[]:[{clientY:y}]},changedTouches:{value:[{clientY:y}]}});
+          el.dispatchEvent(event);
+        };
+        emit('touchstart',220);
+        if (crossEdge) el.scrollTop=max;
+        emit('touchend',direction>0 ? 60 : 380);
+      },{direction,crossEdge});
+      await page.waitForTimeout(450);
+    };
+    await touchSwipe(1,true);
+    assert.equal(await page.locator('#swipe-counter').textContent(),'1 / 3','Reaching the bottom while reading does not turn the word');
+    await touchSwipe(1);
+    assert.equal(await page.locator('#swipe-counter').textContent(),'2 / 3','A fresh upward gesture at the bottom advances a long card');
+    await touchSwipe(-1);
+    assert.equal(await page.locator('#swipe-counter').textContent(),'1 / 3','A downward gesture at the top returns to the previous word');
     if (!horizontal) {
       const center=await page.locator('#swipe-card').evaluate(el=>{const r=el.getBoundingClientRect();return (r.left+r.right)/2;});
       assert.ok(Math.abs(center-width/2)<2,`Reading and navigation keep the vertical card centered at ${width}: ${center}`);
@@ -113,6 +138,23 @@ module.exports = async function verifyResponsiveStudy(page) {
     if (process.env.UI_TEST_ARTIFACTS) await page.screenshot({path:path.join(process.env.UI_TEST_ARTIFACTS,`shorts-${width}x${height}.png`)});
     console.log(`PASS adaptive Shorts card, reading scroll and explicit navigation: ${width}x${height}`);
   }
+  await page.setViewportSize({width:1366,height:768});
+  await page.evaluate(()=>window.uiTest.setViewMode('swipe'));
+  await page.waitForTimeout(600);
+  await page.locator('.swipe-card-details').evaluate(el=>{
+    el.scrollTop=(el.scrollHeight-el.clientHeight)/2;
+    el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:180}));
+    el.scrollTop=el.scrollHeight;
+    el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:180}));
+  });
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('#swipe-counter').textContent(),'1 / 3','Reading momentum cannot turn a card when it reaches the bottom');
+  for (let i=0;i<6;i++) {
+    await page.locator('.swipe-card-details').evaluate(el=>el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:180})));
+    await page.waitForTimeout(100);
+  }
+  assert.equal(await page.locator('#swipe-counter').textContent(),'2 / 3','A fresh wheel gesture at the edge advances once, including continued momentum');
+  console.log('PASS wheel edge navigation with momentum isolation');
   await page.setViewportSize({width:506,height:898});
   await page.evaluate(() => {window.uiTest.seedStudy(); window.uiTest.setViewMode('swipe');});
   await page.waitForTimeout(600);
@@ -127,6 +169,11 @@ module.exports = async function verifyResponsiveStudy(page) {
   await page.waitForTimeout(450);
   assert.equal(await page.locator('#swipe-counter').textContent(),'2 / 3','Fitting cards keep the original swipe-to-next gesture');
   console.log('PASS original swipe navigation on cards that fit');
+  const safeStyle=await page.addStyleTag({content:':root { --safe-bottom:calc(34px / var(--gui-scale)); }'});
+  await page.waitForTimeout(200);
+  const safeBottom=await page.locator('#hide-toggle-bar').evaluate(el=>innerHeight-el.getBoundingClientRect().bottom);
+  assert.ok(safeBottom>=34,'Mobile GUI scaling preserves the physical home-indicator safe area');
+  await safeStyle.evaluate(el=>el.remove());
   for (const [width,height] of [[390,844],[844,390],[1440,900]]) {
     await page.setViewportSize({width,height});
     await page.locator('#start-test-btn').click();

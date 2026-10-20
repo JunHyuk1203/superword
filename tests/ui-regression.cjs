@@ -306,7 +306,7 @@ async function main() {
       await page.evaluate(() => {window.uiTest.seedStudy(); window.uiTest.setViewMode('card'); window.scrollTo(0, 0);});
       await page.waitForTimeout(450);
       const cardGap = await page.evaluate(() => document.querySelector('.word-card').getBoundingClientRect().top - document.querySelector('.ios-nav-bar').getBoundingClientRect().bottom);
-      assert.ok(cardGap >= 18, `Card top spacing at ${width}`);
+      assert.ok(cardGap >= 18*(width<960 ? 0.7 : 1), `Card top spacing at ${width}`);
       assert.equal(await page.locator('.hide-toggle-options button').count(), 4);
       await page.locator('#toggle-word').click();
       assert.equal(await page.locator('#toggle-word').getAttribute('aria-pressed'), 'false');
@@ -322,7 +322,7 @@ async function main() {
           fits: bar.left >= 0 && bar.right <= innerWidth && bar.bottom <= innerHeight,
           overflow: document.documentElement.scrollWidth > innerWidth};
       });
-      assert.ok(fit.top >= (width >= 600 ? 8 : 18) && fit.bottom >= 12, `Shorts card spacing at ${width}: ${JSON.stringify(fit)}`);
+      assert.ok(fit.top >= (width >= 600 ? 8 : 18)*(width<960 ? 0.7 : 1) && fit.bottom >= 12, `Shorts card spacing at ${width}: ${JSON.stringify(fit)}`);
       assert.ok(fit.fits && !fit.overflow, `Toolbar fits at ${width}`);
       assert.equal(await page.locator('#auto-play-toggle').isVisible(), true);
       assert.equal(await page.locator('#shuffle-swipe-btn').isVisible(), true);
@@ -381,7 +381,7 @@ async function main() {
         const button = document.querySelector(level === 'books' ? '#add-book-btn' : '#add-chapter-btn');
         return button.getBoundingClientRect().top - document.querySelector('.ios-nav-bar').getBoundingClientRect().bottom;
       }, level);
-      assert.ok(gap >= 18, `${level} add button has spacing below header`);
+      assert.ok(gap >= 18*0.7, `${level} add button has spacing below header`);
     }
     console.log('PASS add book/chapter spacing and bottom-sheet animation without overshoot');
     }

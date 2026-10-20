@@ -204,7 +204,7 @@ document.querySelectorAll('.modal-screen').forEach(modal => {
       }
       
       if (isSwipeIntent && deltaY > 0) {
-        content.style.transform = `translateY(${deltaY}px)`;
+        content.style.transform = `translateY(${deltaY / guiScale()}px)`;
         content.style.transition = 'none';
       }
     }, { passive: true });
@@ -325,6 +325,15 @@ if (isIOSWebKit) iosBackText.classList.add('ios-back-label-paint');
 const iosNavTitleInline = $('ios-nav-title-inline');
 const iosLargeTitleText = $('ios-large-title-text');
 
+// DOM rectangles use viewport pixels; CSS positions use the scaled GUI units.
+function guiScale() {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gui-scale')) || 1;
+}
+function guiBounds(element) {
+  const rect = element.getBoundingClientRect(), scale = guiScale();
+  return Object.fromEntries(['left', 'top', 'right', 'bottom', 'width', 'height'].map(key => [key, rect[key] / scale]));
+}
+
 // Move the actual title into the inline slot: never show two copies.
 const iosNavBar = document.querySelector('.ios-nav-bar');
 let navFrame = 0;
@@ -360,7 +369,7 @@ function setLibraryTitle(title) {
 }
 function libraryTransferKeyframes(from, returning) {
   const destination = returning ? iosLargeTitleText : iosBackText;
-  const to = destination.getBoundingClientRect();
+  const to = guiBounds(destination);
   const style = getComputedStyle(destination);
   // Render with the destination's final font throughout. Android WebView may
   // autosize/re-rasterize interpolated font sizes differently from resting text.
@@ -390,7 +399,7 @@ function animateLibraryNavigation(direction) {
   // Otherwise retain the outgoing title in a clipped layer until it slides away.
   if (!advancing && libraryNavSnapshot?.titleBounds.width > 0) {
     const from = libraryNavSnapshot.titleBounds;
-    const bar = iosNavBar.getBoundingClientRect();
+    const bar = guiBounds(iosNavBar);
     const barStyle = getComputedStyle(iosNavBar);
     const exit = document.createElement('span');
     exit.className = 'library-nav-exit';
@@ -476,8 +485,8 @@ function positionLibraryTitle() {
   if (shorts || window.scrollY > 96) iosNavBar.classList.add('compact');
   else if (window.scrollY < 16) iosNavBar.classList.remove('compact');
   const compact = iosNavBar.classList.contains('compact');
-  const target = (compact ? iosNavTitleInline : document.querySelector('.ios-title-slot')).getBoundingClientRect();
-  const origin = document.querySelector('.ios-nav-bar-inner').getBoundingClientRect();
+  const target = guiBounds(compact ? iosNavTitleInline : document.querySelector('.ios-title-slot'));
+  const origin = guiBounds(document.querySelector('.ios-nav-bar-inner'));
   iosLargeTitleText.style.transform = `translate(${target.left - origin.left}px, ${target.top - origin.top}px)`;
   iosLargeTitleText.style.width = `${target.width}px`;
   if (libraryNavTransfer) {
@@ -509,8 +518,8 @@ function resetLibraryNavigation() {
     backVisible: iosBackBtn.style.visibility !== 'hidden',
     backText: iosBackText.textContent,
     titleText: iosLargeTitleText.textContent,
-    backBounds: iosBackText.parentElement.getBoundingClientRect().toJSON(),
-    titleBounds: iosLargeTitleText.getBoundingClientRect().toJSON(),
+    backBounds: guiBounds(iosBackText.parentElement),
+    titleBounds: guiBounds(iosLargeTitleText),
     titleFontSize: titleStyle.fontSize,
     titleStyle: Object.fromEntries(['fontFamily', 'fontSize', 'fontWeight', 'letterSpacing', 'lineHeight', 'color'].map(key => [key, titleStyle[key]]))
   };
@@ -539,7 +548,7 @@ window.addEventListener('pageshow', event => {
 });
 new ResizeObserver(() => {
   const inner = document.querySelector('.ios-nav-bar-inner');
-  const contentHeight = inner.getBoundingClientRect().height;
+  const contentHeight = guiBounds(inner).height;
   if (contentHeight > 0) {
     const style = getComputedStyle(iosNavBar);
     const height = contentHeight + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
@@ -1427,7 +1436,7 @@ function adjustSwipeViewHeight() {
   const rect = swipeView.getBoundingClientRect();
   const barTop = hideToggleBar.getBoundingClientRect().top;
   const bottom = hideToggleBar.classList.contains('hidden') ? vph - 16 : Math.min(vph, barTop) - 14;
-  swipeView.style.height = Math.max(bottom - rect.top, 48) + 'px';
+  swipeView.style.height = Math.max((bottom - rect.top) / guiScale(), 48) + 'px';
   fitSwipeCard();
 }
 
@@ -1648,28 +1657,35 @@ function setupSwipeGestures() {
   if (swipeGesturesReady) return;
   swipeGesturesReady = true;
   const el = wordsSwipeView;
-  let startY = 0, isDragging = false, readingContent = false;
-  const hasScrollableContent = target => {
+  let startY = 0, isDragging = false, scrollAtStart = [];
+  const scrollableContent = target => {
+    const containers = [];
     for (let node = target instanceof Element ? target : null; node && el.contains(node); node = node.parentElement) {
-      if (node.scrollHeight > node.clientHeight + 2 && /auto|scroll/.test(getComputedStyle(node).overflowY)) return true;
+      if (node.scrollHeight > node.clientHeight + 2 && /auto|scroll/.test(getComputedStyle(node).overflowY)) {
+        containers.push({ up: node.scrollTop > 2, down: node.scrollTop < node.scrollHeight - node.clientHeight - 2 });
+      }
     }
-    return false;
+    return containers;
   };
+  const canRead = (containers, direction) => containers.some(bounds => direction > 0 ? bounds.down : bounds.up);
 
   const onDragStart = (y, target) => {
     startY = y;
     isDragging = !target.closest('button, input, textarea, a');
-    readingContent = hasScrollableContent(target);
+    scrollAtStart = scrollableContent(target);
     swipeDidOccur = false;
   };
   const onDragEnd = (y) => {
     if (!isDragging) return;
     isDragging = false;
-    if (readingContent) return;
     const dy = y - startY;
     if (Math.abs(dy) < 40) return;
+    // A gesture that began while reading only scrolls. A fresh gesture at the
+    // edge can turn the page, even when this card contains long content.
+    const direction = dy < 0 ? 1 : -1;
+    if (canRead(scrollAtStart, direction)) return;
     swipeDidOccur = true;
-    navigateSwipe(dy < 0 ? 1 : -1);
+    navigateSwipe(direction);
   };
 
   // Touch Events
@@ -1684,12 +1700,24 @@ function setupSwipeGestures() {
   el.addEventListener('mousedown', e => onDragStart(e.clientY, e.target));
   el.addEventListener('mouseup', e => onDragEnd(e.clientY));
   el.addEventListener('mouseleave', e => onDragEnd(e.clientY));
-  el.addEventListener('mousemove', e => { if (isDragging && !readingContent) e.preventDefault(); });
+  el.addEventListener('mousemove', e => { if (isDragging && !scrollAtStart.length) e.preventDefault(); });
 
+  let wheelTime = 0, wheelDirection = 0, wheelDistance = 0, wheelBlocked = false, wheelNavigated = false;
   el.addEventListener('wheel', e => {
-    if (hasScrollableContent(e.target)) return;
-    if (Math.abs(e.deltaY) < 30) return;
-    navigateSwipe(e.deltaY > 0 ? 1 : -1);
+    if (!e.deltaY || Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.ctrlKey) return;
+    const now = performance.now(), direction = e.deltaY > 0 ? 1 : -1;
+    if (now - wheelTime > 180 || direction !== wheelDirection) {
+      wheelDistance = 0;
+      wheelBlocked = canRead(scrollableContent(e.target), direction);
+      wheelNavigated = false;
+    }
+    wheelTime = now;
+    wheelDirection = direction;
+    wheelDistance += Math.abs(e.deltaY) * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientHeight : 1);
+    // Keep a reading scroll's momentum from turning the next card at its edge.
+    if (wheelBlocked || wheelNavigated || wheelDistance < 30) return;
+    wheelNavigated = true;
+    navigateSwipe(direction);
   }, { passive: true });
 }
 
