@@ -75,6 +75,11 @@ async function main() {
         front: `example${i}`, back: '📌 뜻\n예시\n\n📖 예문\n• This is an example.', order: i
       })));
     });
+    if (process.env.UI_TEST_IOS_PAINT) {
+      await require('./ios-title-paint.cjs')(page);
+      assert.deepEqual(errors, []);
+      return;
+    }
     if (!process.env.UI_TEST_NAV_ONLY) {
     const dialogs = ['settings-modal', 'test-modal', 'history-modal', 'export-modal'];
     for (const width of [1440, 1024, 768, 390, 320]) {
@@ -462,11 +467,17 @@ async function main() {
       assert.equal(forwardMotion.exits, 0, 'Forward title transfers instead of exiting sideways');
       if (width < 960) assert.ok(forwardMotion.y < 0, 'Expanded current title moves upward into the back label');
       assert.equal(forwardMotion.clipAnimated, true, 'Keep the original clipping animation on every platform');
-      assert.equal(await page.locator('#ios-back-text').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'Destination back label waits for transfer arrival');
+      const waitingBackLabel = await page.locator('#ios-back-text').evaluate(el => ({
+        visibility:getComputedStyle(el).visibility, opacity:getComputedStyle(el).opacity
+      }));
+      assert.deepEqual(waitingBackLabel, process.env.UI_TEST_WEBKIT ?
+        {visibility:'visible',opacity:'0'} : {visibility:'hidden',opacity:'1'},
+        'iOS keeps the real back label painted and hides only its opacity until arrival');
       assert.equal(await page.locator('.library-nav-ghost').isVisible(), true);
       await page.evaluate(() => document.querySelector('.library-nav-ghost').getAnimations()[0].play());
       await page.waitForFunction(() => !document.querySelector('#ios-back-text').classList.contains('library-nav-pending'));
       assert.equal(await page.locator('#ios-back-text').isVisible(), true);
+      assert.equal(await page.locator('#ios-back-text').evaluate(el => getComputedStyle(el).opacity), '1', 'Real back label is opaque after the flying title arrives');
       assert.equal(await page.locator('#ios-back-text').textContent(), '영어 단어장');
       await page.evaluate(async () => {
         document.querySelector('#ios-back-btn').click();

@@ -280,6 +280,11 @@ body[data-theme="light"] .bg-orb { opacity: 0.12; }
 .ios-back-label-slot { display: block; min-width: 0; overflow: hidden; }
 .ios-title-label { display: block; }
 .library-nav-pending { visibility: hidden !important; }
+#ios-back-text.ios-back-label-paint { will-change: opacity; }
+.ios-back-label-paint.library-nav-pending {
+  visibility: visible !important;
+  opacity: 0;
+}
 .ios-large-title-text.library-nav-pending {
   /* The flying label targets this layout box; do not also ease the hidden box. */
   transition: none !important;

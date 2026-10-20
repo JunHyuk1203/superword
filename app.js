@@ -317,6 +317,9 @@ function setLibraryLevel(newIndex) {
 }
 const iosBackBtn = $('ios-back-btn');
 const iosBackText = $('ios-back-text');
+// Keep iOS's real button text in the paint tree while the flying title covers it.
+// Restoring visibility after the transfer can leave its glyphs unpainted.
+if (isIOSWebKit) iosBackText.classList.add('ios-back-label-paint');
 const iosNavTitleInline = $('ios-nav-title-inline');
 const iosLargeTitleText = $('ios-large-title-text');
 
