@@ -19,36 +19,62 @@ module.exports = async function verifyResponsiveStudy(page) {
   }, words);
   if (process.env.UI_TEST_ARTIFACTS) await fs.mkdir(process.env.UI_TEST_ARTIFACTS, {recursive:true});
   let referenceFont;
+  let referenceButton;
   for (const [width,height] of [[506,898],[390,844],[1440,900],[1920,1080]]) {
     await page.setViewportSize({width,height});
     await page.evaluate(() => window.uiTest.setViewMode('card'));
     await page.waitForTimeout(450);
     const size = await page.evaluate(() => ({width:document.querySelector('.app-container').getBoundingClientRect().width,
       font:getComputedStyle(document.querySelector('.word-card-word')).fontSize,
+      buttonWidth:document.querySelector('#start-test-btn').getBoundingClientRect().width,
+      buttonHeight:document.querySelector('#start-test-btn').getBoundingClientRect().height,
       overflow:document.documentElement.scrollWidth > innerWidth}));
     referenceFont ||= size.font;
-    assert.ok(size.width <= 520 && !size.overflow, `Reading width stays bounded at ${width}: ${JSON.stringify(size)}`);
+    referenceButton ||= [size.buttonWidth,size.buttonHeight];
+    assert.ok(Math.abs(size.width-width)<1 && !size.overflow, `Page uses available width at ${width}: ${JSON.stringify(size)}`);
     assert.equal(size.font, referenceFont, 'Reading text does not enlarge at a desktop breakpoint');
-    console.log(`PASS bounded reference layout: ${width}x${height}`);
+    assert.deepEqual([size.buttonWidth,size.buttonHeight],referenceButton, 'GUI buttons keep the reference size as the page grows');
+    console.log(`PASS fluid page with reference GUI sizes: ${width}x${height}`);
   }
   for (const [width,height] of [[844,390],[667,375],[1024,600],[1280,540],[1024,768],[1440,900],[506,430],[390,360]]) {
     await page.setViewportSize({width,height});
     await page.evaluate(() => window.uiTest.setViewMode('swipe'));
-    await page.waitForTimeout(700);
+    await page.waitForFunction(() => {
+      const bar=document.querySelector('.ios-nav-bar');
+      const inner=document.querySelector('.ios-nav-bar-inner');
+      const style=getComputedStyle(bar), border=parseFloat(style.borderTopWidth)+parseFloat(style.borderBottomWidth);
+      const card=document.querySelector('#swipe-card'), toolbar=document.querySelector('#hide-toggle-bar');
+      return bar.classList.contains('compact') && card.clientHeight>50 &&
+        card.getBoundingClientRect().bottom<=toolbar.getBoundingClientRect().top-5 &&
+        Math.abs(bar.getBoundingClientRect().height-inner.getBoundingClientRect().height-border)<1;
+    });
+    await page.waitForTimeout(100);
     const layout = await page.evaluate(() => {
       const card=document.querySelector('#swipe-card'), primary=document.querySelector('.swipe-card-primary'), details=document.querySelector('.swipe-card-details');
       const a=primary.getBoundingClientRect(), b=details.getBoundingClientRect();
+      const title=document.querySelector('#ios-large-title-text'), titleBox=title.getBoundingClientRect();
+      const titleRange=document.createRange(); titleRange.selectNodeContents(title);
+      const glyphs=titleRange.getBoundingClientRect();
       return {columns:getComputedStyle(document.querySelector('.swipe-card-content')).gridTemplateColumns,
+        titleVisible:title.checkVisibility() && glyphs.width>0 && glyphs.height>0,
+        titleText:title.textContent.trim(),titleTop:titleBox.top,titleBottom:titleBox.bottom,
+        headerBottom:document.querySelector('.ios-nav-bar').getBoundingClientRect().bottom,
         left:a.left,right:b.left,cardBottom:card.getBoundingClientRect().bottom,cardHeight:card.clientHeight,
         barTop:document.querySelector('#hide-toggle-bar').getBoundingClientRect().top,
-        font:card.style.fontSize,overflow:document.documentElement.scrollWidth > innerWidth};
+        font:card.style.fontSize,overflow:document.documentElement.scrollWidth > innerWidth,
+        viewport:[innerWidth,innerHeight,visualViewport.height],headerClass:document.querySelector('.ios-nav-bar').className,
+        viewHeight:document.querySelector('#words-swipe-view').style.height};
     });
     assert.ok(!layout.overflow && layout.cardHeight > 50 && layout.cardBottom <= layout.barTop-5, `Card fits above tools at ${width}x${height}: ${JSON.stringify(layout)}`);
     assert.equal(layout.font,'100%', 'Card uses readable text without percentage shrinking');
-    const horizontal = width >= 480;
+    assert.ok(layout.titleVisible && layout.titleText === 'Day 01' && layout.titleTop>=0 && layout.titleBottom<=layout.headerBottom,
+      `Real unit title remains rendered at ${width}x${height}: ${JSON.stringify(layout)}`);
+    const horizontal = width >= 480 && height <= 650;
     if (horizontal) {
       assert.equal(layout.columns.split(' ').length,2);
       assert.ok(layout.right > layout.left+100, 'Short wide card has side-by-side content');
+    } else {
+      assert.equal(layout.columns,'none', 'Tall screens keep the original vertical Shorts card');
     }
     const readingTarget = horizontal ? '.swipe-card-details' : '#swipe-card';
     if (process.env.UI_TEST_WEBKIT) {

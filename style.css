@@ -184,7 +184,7 @@ body[data-theme="light"] .bg-orb { opacity: 0.12; }
 .app-container {
   position: relative;
   z-index: 1;
-  max-width: 520px;
+  width: 100%;
   margin: 0 auto;
   padding: 0 0 96px;  /* bottom space for floating pill bar */
   display: flex;
@@ -3118,7 +3118,7 @@ button:active {
 .sheet-modal {
   margin: 0 auto;
   width: 100%;
-  max-width: 520px;
+  max-width: 640px;
   max-height: 92vh;
   max-height: 92dvh;
   box-sizing: border-box;
@@ -3259,8 +3259,13 @@ button:focus-visible, select:focus-visible, input:focus-visible {
   outline-offset: 3px;
 }
 
-/* Keep the reference reading width on large screens instead of enlarging cards. */
+/* Use desktop space without scaling the reference text and controls. */
 @media (min-width: 960px) {
+  .ios-nav-bar-inner { max-width: none; }
+  .words-card-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
   .ios-nav-action-btn:hover, .circle-action-btn:hover, .edit-circle-btn:hover {
     background: var(--bg-tertiary);
   }
@@ -3290,16 +3295,20 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 .shorts-controls-inner { gap: 2px; }
 .word-card-section, .word-card-word { overflow-wrap: anywhere; }
 
-/* Landscape Shorts uses a wide card, including landscape tablets and browsers. */
-@media (min-width: 600px) and (min-aspect-ratio: 6/5) {
-  body.shorts-mode-active .app-container { max-width: 1080px; }
+/* Keep the original upright card when there is enough vertical space. */
+@media (min-width: 600px) and (min-height: 651px) {
+  body.shorts-mode-active #words-swipe-view { width: min(100%, 520px); margin-inline: auto; }
+}
+
+/* Only short screens need the horizontal card and single-row tools. */
+@media (min-width: 600px) and (max-height: 650px) {
   body.shorts-mode-active .ios-nav-bar-inner {
     max-width: none; display: grid;
     grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 12px;
   }
   body.shorts-mode-active .ios-nav-inline { grid-column: 1; min-width: 0; }
   body.shorts-mode-active .ios-large-title { display: contents !important; }
-  body.shorts-mode-active .ios-title-slot { display: none; }
+  body.shorts-mode-active .ios-title-slot { display: contents; }
   body.shorts-mode-active #words-action-wrapper { grid-column: 2; grid-row: 1; }
   body.shorts-mode-active .words-action-bar { flex-wrap: nowrap; gap: 4px; margin: 0 !important; }
   body.shorts-mode-active .circle-action-btn { width: 32px; height: 32px; min-width: 0; }

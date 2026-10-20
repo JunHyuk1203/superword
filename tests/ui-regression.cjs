@@ -101,8 +101,8 @@ async function main() {
         overflow: document.documentElement.scrollWidth > innerWidth
       }));
       assert.equal(layout.overflow, false, `Page overflow at ${width}`);
-      assert.ok(layout.contentWidth <= 520, 'Keep the reference reading width on every viewport');
-      assert.ok(layout.columns === 'none' || layout.columns.split(' ').length === 1, 'Cards keep a single readable column');
+      assert.ok(Math.abs(layout.contentWidth-width)<1, 'Page uses available viewport width');
+      assert.equal(layout.columns.split(' ').length, width>=960 ? 2 : 1, 'Desktop cards use the available columns');
       if (process.env.UI_TEST_ARTIFACTS && [1440, 390].includes(width)) {
         await fs.mkdir(process.env.UI_TEST_ARTIFACTS, {recursive: true});
         await page.screenshot({path: path.join(process.env.UI_TEST_ARTIFACTS, `library-${width}.png`)});
@@ -649,8 +649,7 @@ async function main() {
         });
         return {height:bar.height,width:bar.width, controls, overflow:document.documentElement.scrollWidth > innerWidth};
       });
-      const wideShorts = width / 900 >= 1.2;
-      assert.ok(desktop.width <= (wideShorts ? 1080 : 520) && desktop.height <= (wideShorts ? 64 : 132) && !desktop.overflow,
+      assert.ok(desktop.width <= width && desktop.height <= 132 && !desktop.overflow,
         `Adaptive Shorts header at ${width}: ${JSON.stringify(desktop)}`);
       assert.ok(desktop.controls.every(button => button.fits), `All actions fit the reference-size header at ${width}: ${JSON.stringify(desktop)}`);
     }
