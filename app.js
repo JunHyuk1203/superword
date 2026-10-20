@@ -367,11 +367,15 @@ function libraryTransferKeyframes(from, returning) {
   libraryNavGhost.style.width = `${to.width}px`;
   const scale = to.height > 0 ? from.height / to.height : 1;
   const clippedRight = Math.max(0, to.width - from.width / Math.max(scale, 0.01));
-  return [
+  const frames = [
     { transform: `translate(0, 0) scale(${scale})`, clipPath: `inset(0px ${clippedRight}px 0px 0px)` },
     { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(1)`,
       clipPath: 'inset(0px 0px 0px 0px)', color: style.color }
   ];
+  // On iOS pushes, keep the same title transfer without animating a clip mask
+  // on the moving text layer. Its fixed overflow box already clips long labels.
+  if (isIOSWebKit && !returning) frames.forEach(frame => { delete frame.clipPath; });
+  return frames;
 }
 function animateLibraryNavigation(direction) {
   if (!iosNavBar || !currentUser || !iosNavBar.getClientRects().length || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -379,9 +383,10 @@ function animateLibraryNavigation(direction) {
   const epoch = libraryNavEpoch;
   const returning = direction < 0 && libraryNavSnapshot?.backVisible;
   const backVisible = iosBackBtn.style.visibility !== 'hidden';
-  // Keep the real back label visible on pushes. A separate flying copy can
-  // disappear in iOS compositing while its destination is hidden.
-  if (libraryNavSnapshot?.titleBounds.width > 0) {
+  const advancing = direction > 0 && backVisible && libraryNavSnapshot?.titleText === iosBackText.textContent;
+  // The title reused as a back label already has its own transfer animation.
+  // Otherwise retain the outgoing title in a clipped layer until it slides away.
+  if (!advancing && libraryNavSnapshot?.titleBounds.width > 0) {
     const from = libraryNavSnapshot.titleBounds;
     const bar = iosNavBar.getBoundingClientRect();
     const barStyle = getComputedStyle(iosNavBar);
@@ -416,7 +421,7 @@ function animateLibraryNavigation(direction) {
     libraryNavAnimations.push(animation);
   };
   if (!returning) slideIn(iosLargeTitleText.querySelector('.ios-title-label'));
-  if (backVisible && direction < 0) slideIn(iosBackText);
+  if (backVisible && !advancing) slideIn(iosBackText);
   // WebView's compositor can start late or pause while JS timers keep ticking.
   // A wall-clock deadline must not replace a label before its actual arrival.
   const clearWhenSettled = () => {
@@ -428,7 +433,7 @@ function animateLibraryNavigation(direction) {
     } else clearLibraryNavigationMotion();
   };
   libraryNavRevealTimer = setTimeout(clearWhenSettled, timing.duration + 80);
-  if (!returning) return;
+  if (!returning && !advancing) return;
   const from = returning ? libraryNavSnapshot.backBounds : libraryNavSnapshot.titleBounds;
   const destination = returning ? iosLargeTitleText : iosBackText;
   destination.classList.add('library-nav-pending');
@@ -442,7 +447,8 @@ function animateLibraryNavigation(direction) {
   });
   document.body.appendChild(ghost);
   libraryNavGhost = ghost;
-  const movement = ghost.animate(libraryTransferKeyframes(from, returning), timing);
+  const keyframes = libraryTransferKeyframes(from, returning);
+  const movement = ghost.animate(keyframes, timing);
   movement.onfinish = () => {
     if (epoch !== libraryNavEpoch) return;
     destination.classList.remove('library-nav-pending');
@@ -458,7 +464,7 @@ function animateLibraryNavigation(direction) {
     });
   };
   libraryNavAnimations.push(movement);
-  libraryNavTransfer = { movement, from, returning };
+  libraryNavTransfer = { movement, from, returning, keyframeSignature: JSON.stringify(keyframes) };
 }
 function positionLibraryTitle() {
   navFrame = 0;
@@ -474,7 +480,13 @@ function positionLibraryTitle() {
   iosLargeTitleText.style.width = `${target.width}px`;
   if (libraryNavTransfer) {
     const { movement, from, returning } = libraryNavTransfer;
-    movement.effect.setKeyframes(libraryTransferKeyframes(from, returning));
+    const frames = libraryTransferKeyframes(from, returning);
+    const signature = JSON.stringify(frames);
+    // Avoid replacing an unchanged active effect on iOS's moving text layer.
+    if (!isIOSWebKit || returning || signature !== libraryNavTransfer.keyframeSignature) {
+      movement.effect.setKeyframes(frames);
+      libraryNavTransfer.keyframeSignature = signature;
+    }
   }
   if (pendingLibraryNavDirection) {
     const direction = pendingLibraryNavDirection;
