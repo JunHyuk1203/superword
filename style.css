@@ -3317,7 +3317,7 @@ button:focus-visible, select:focus-visible, input:focus-visible {
   .sheet-modal .sheet-drag-bar { display: none; }
   .sheet-header { padding-top: 24px !important; }
 
-  body.shorts-mode-active .ios-nav-bar { border-radius: 0; margin-bottom: 0; top: 0; }
+  body.shorts-mode-active .ios-nav-bar { margin-bottom: 0; top: 0; }
 }
 
 @media (max-width: 959px) {
