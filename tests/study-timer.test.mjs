@@ -66,6 +66,20 @@ test('frequent UI ticks do not send heartbeat writes every second',async()=>{
   assert.equal(syncs,1);now+=1000;await timer.update(true);assert.equal(syncs,2);
 });
 
+test('linked timer renews its ten-second lease every five seconds while active or idle',async()=>{
+  let now=100000;const times=[];
+  const timer=new AutoStudyTimer({store:memory(),now:()=>now,keepAlive:true,startWhenIdle:false,heartbeatMs:5000,api:{
+    start:async()=>response(),
+    sync:async input=>{times.push(now);return {sessionId:'session',session:{sequence:input.sequence,serverNowMs:now,activeSinceMs:input.tracking?now:null,leaseUntilMs:input.tracking?now+10000:null}};},
+  }});
+  await timer.update(true);
+  for(let i=0;i<10;i++){now+=1000;await timer.update(true);}
+  assert.deepEqual(times,[100000,105000,110000]);
+  await timer.update(false);now+=4999;await timer.update(false);
+  assert.equal(times.length,4);now++;await timer.update(false);
+  assert.equal(times.at(-1),115000);assert.equal(timer.tracking,false);
+});
+
 test('settings, records and chapter changes pause one session then resume without reset or gap credit',async()=>{
   let now=Date.parse('2026-10-22T03:00:00Z');const history={};
   const timer=new AutoStudyTimer({store:memory(),now:()=>now,api:localApi(memory(),()=>now,row=>{history[row.id]=row;})});

@@ -10,8 +10,8 @@ export function studyUuid(cryptoApi=globalThis.crypto) {
 
 // One queue owns start/heartbeat/finish, including navigation during a request.
 export class AutoStudyTimer {
-  constructor({api,store,now=()=>Date.now(),onChange=()=>{},keepAlive=false,startWhenIdle=keepAlive}) {
-    Object.assign(this,{api,store,now,onChange,keepAlive,startWhenIdle});
+  constructor({api,store,now=()=>Date.now(),onChange=()=>{},keepAlive=false,startWhenIdle=keepAlive,heartbeatMs=20000}) {
+    Object.assign(this,{api,store,now,onChange,keepAlive,startWhenIdle,heartbeatMs});
     this.record=store.read(); this.session=null; this.desired=false; this.finishing=false; this.tracking=false;
     this.busy=false; this.retryAt=0; this.lastSync=0; this.sequence=0; this.error='';
   }
@@ -37,7 +37,7 @@ export class AutoStudyTimer {
         this.record=null; this.session=null; this.store.write(null);
         this.tracking=false;
         this.finishing=false;
-      } else if (this.session && (this.tracking!==this.desired || (this.desired||this.keepAlive) && this.now()-this.lastSync>=20000)) {
+      } else if (this.session && (this.tracking!==this.desired || (this.desired||this.keepAlive) && this.now()-this.lastSync>=this.heartbeatMs)) {
         const result=await this.api.sync({...this.record,sequence:++this.sequence,tracking:this.desired});
         this.observe(result); this.lastSync=this.now();
       }

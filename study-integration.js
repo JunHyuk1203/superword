@@ -2,7 +2,7 @@ import {initializeApp,getApps,getApp} from 'https://www.gstatic.com/firebasejs/1
 import {getAuth,onAuthStateChanged,signInWithPopup,signInWithEmailAndPassword,signInWithCustomToken,GoogleAuthProvider,signOut,onIdTokenChanged,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
 import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js';
 import {getFirestore,doc,setDoc,collection,query,orderBy,limit,getDocs,onSnapshot,documentId} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
-import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261023-2';
+import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261023-3';
 import {wordLiveSeconds} from './study-word-time.js?v=20261022-1';
 
 const config={apiKey:'AIzaSyBF8-jNyMdm1izozV2S5OoB6KtnIQ716Yw',authDomain:'study-junhyuk1203-20261021.firebaseapp.com',projectId:'study-junhyuk1203-20261021',appId:'1:555183292594:web:64b739b20ca4b32d63c9ab'};
@@ -143,7 +143,7 @@ function makeTracker() {
       return guarded('syncWordStudy',{...record,present:appVisible()&&Boolean(wordUid)});
     },finish:record=>guarded('finishStudySession',record)
   };
-  linkedTracker=new AutoStudyTimer({api,store,onChange:paint,keepAlive:true,startWhenIdle:false});
+  linkedTracker=new AutoStudyTimer({api,store,onChange:paint,keepAlive:true,startWhenIdle:false,heartbeatMs:5000});
   // Recover the saved session paused, then resume when a learning view is visible.
   if(linkedTracker.record)void linkedTracker.update(false,!appVisible());else void linkedTracker.update(learning(),!appVisible());
   paint();
