@@ -28,12 +28,26 @@ async function main(){
       const sdk=`
         const apps=[{name:'word'}],getApps=()=>apps,getApp=()=>apps[0],initializeApp=(_,name)=>{const app={name};apps.push(app);return app;};
         const getAuth=app=>({kind:app.name,currentUser:null}),getFunctions=()=>({});
-        const subscriptions=[];let serverStats={subjectSeconds:{vocab:0}},serverWord=null,sessionNumber=0;
+        const browserLocalPersistence={type:'LOCAL'},setPersistence=async(auth,persistence)=>{window.studyPersistence=persistence.type;await new Promise(resolve=>setTimeout(resolve,40));window.studyPersistenceReady=true;};
+        const subscriptions=[],authCallbacks=new Map();let serverStats={subjectSeconds:{vocab:0}},serverWord=null,sessionNumber=0;
         const deliver=()=>{for(const item of subscriptions)if(!item.stopped)item.callback({data:()=>item.path.includes('dailyStats')?serverStats:{subjects:[{id:'vocab',name:'영단어'}],wordSnapshot:serverWord}});};
         const httpsCallable=(_,name)=>async data=>{
           window.remoteCalls.push(name);(window.remoteInputs||=[]).push({name,data});
+          if(name==='saveWordStudyLink'){window.serverLinkSaved=true;return {data:{linked:true}};}
+          if(name==='restoreWordStudyLink')return {data:window.testLinked?{linked:true,token:'fixture-token'}:{linked:false}};
+          if(name==='removeWordStudyLink')return {data:{linked:false}};
+          if(name==='prepareWordStudy') {
+            await new Promise(resolve=>setTimeout(resolve,150));
+            if(!window.cameraStopAcknowledged)for(let i=0;i<localStorage.length;i++) {
+              const key=localStorage.key(i);
+              if(key.startsWith('superword:study-local:')&&JSON.parse(localStorage.getItem(key))?.session?.activeSinceMs!=null)throw new Error('Device timer ran before camera stop acknowledgement');
+            }
+            window.cameraStopAcknowledged=true;
+            return {data:{cameraStopped:true}};
+          }
           if(name==='startWordStudy'){serverWord={sessionId:'remote-session-'+(++sessionNumber),subjectId:'vocab',sequence:0,segments:[],serverNowMs:Date.now(),accumulatedSeconds:0,activeSinceMs:null,leaseUntilMs:null};deliver();return {data:{sessionId:serverWord.sessionId,session:{...serverWord}}};}
           if(name==='syncWordStudy'||name==='finishStudySession'){
+            if(data.tracking&&!window.cameraStopAcknowledged)throw new Error('Word timer ran before camera stop acknowledgement');
             const delta=serverWord?.activeSinceMs==null?0:Math.max(0,Math.floor((Math.min(Date.now(),serverWord.leaseUntilMs)-serverWord.activeSinceMs)/1000));
             if(serverWord){serverWord.accumulatedSeconds+=delta;serverWord.segments=[{date:'2026-10-22',seconds:serverWord.accumulatedSeconds}];serverStats={subjectSeconds:{vocab:serverStats.subjectSeconds.vocab+delta},wordCheckpoint:{sessionId:serverWord.sessionId,seconds:serverWord.accumulatedSeconds}};}
             if(name==='finishStudySession'){const seconds=serverWord?.accumulatedSeconds||0;serverWord=null;deliver();return {data:{creditedSeconds:seconds}};}
@@ -42,14 +56,18 @@ async function main(){
           return {data:{creditedSeconds:10}};
         };
         const getFirestore=()=>({}),doc=(_, ...parts)=>parts.join('/'),setDoc=async(key,row)=>{window.savedRows[row.id]=row;},collection=(_, ...parts)=>parts.join('/'),query=path=>({path}),orderBy=()=>({}),limit=()=>({}),documentId=()=>'__name__',getDocs=async input=>({docs:input.path?.includes('dailyStats')?[{id:'2026-10-22',data:()=>serverStats}]:Object.entries(window.savedRows).map(([id,row])=>({id,data:()=>row}))}),onSnapshot=(path,callback)=>{const item={path,callback,stopped:false};subscriptions.push(item);queueMicrotask(deliver);return ()=>{item.stopped=true;};};
-        const onIdTokenChanged=(_,cb)=>queueMicrotask(()=>cb(null)),onAuthStateChanged=(auth,cb)=>queueMicrotask(()=>{
-          const user=auth.kind==='word'?{uid:'fixture',email:'fixture@example.com',emailVerified:true}:window.testLinked?{uid:'study-fixture',email:'study@example.com',emailVerified:true}:null;
+        const onIdTokenChanged=(_,cb)=>queueMicrotask(()=>cb(null)),onAuthStateChanged=(auth,cb)=>{authCallbacks.set(auth,cb);queueMicrotask(()=>{
+          if(auth.kind!=='word'&&!window.studyPersistenceReady)throw new Error('Study auth observed before persistent restoration');
+          const user=auth.kind==='word'?{uid:'fixture',email:'fixture@example.com',emailVerified:true,getIdToken:async()=>'verified-word-token'}:null;
           auth.currentUser=user;cb(user);
-        });
+        });};
+        const signInWithCustomToken=async(auth,token)=>{if(token!=='fixture-token')throw new Error('Invalid restore token');auth.currentUser={uid:'study-fixture',email:'study@example.com',emailVerified:true};window.autoRestored=true;authCallbacks.get(auth)(auth.currentUser);};
         const signInWithPopup=async()=>{},signInWithEmailAndPassword=async()=>{},GoogleAuthProvider=class{},signOut=async()=>{};
       `;
       await page.addScriptTag({type:'module',content:sdk+'\n'+core+'\n'+shared+'\n'+source});
       await page.waitForFunction(()=>document.querySelector('[data-study-link-status]')?.textContent.includes('학습 중')).catch(async error=>{throw new Error(JSON.stringify({errors,status:await page.locator('[data-study-link-status]').textContent(),cause:error.message}));});
+      assert.equal(await page.evaluate(()=>window.studyPersistence),'LOCAL');
+      if(width===1280){assert.equal(await page.evaluate(()=>window.autoRestored),true);await page.waitForFunction(()=>window.serverLinkSaved===true);}
       assert.equal(await page.locator('.study-link-panel').evaluate(node=>node.closest('#settings-modal')?.id),'settings-modal');
       assert.equal(await page.locator('.study-time-capsule').evaluate(node=>Boolean(node.closest('.ios-nav-actions'))),true);
       assert.equal(await page.locator('#library-content .study-link-panel').count(),0);

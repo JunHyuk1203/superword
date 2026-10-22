@@ -1,5 +1,5 @@
 import {initializeApp,getApps,getApp} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js';
-import {getAuth,onAuthStateChanged,signInWithPopup,signInWithEmailAndPassword,GoogleAuthProvider,signOut,onIdTokenChanged} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
+import {getAuth,onAuthStateChanged,signInWithPopup,signInWithEmailAndPassword,signInWithCustomToken,GoogleAuthProvider,signOut,onIdTokenChanged,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
 import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js';
 import {getFirestore,doc,setDoc,collection,query,orderBy,limit,getDocs,onSnapshot,documentId} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
 import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261022-5';
@@ -8,6 +8,7 @@ import {wordLiveSeconds} from './study-word-time.js?v=20261022-1';
 const config={apiKey:'AIzaSyBF8-jNyMdm1izozV2S5OoB6KtnIQ716Yw',authDomain:'study-junhyuk1203-20261021.firebaseapp.com',projectId:'study-junhyuk1203-20261021',appId:'1:555183292594:web:64b739b20ca4b32d63c9ab'};
 const studyApp=getApps().find(app=>app.name==='study-integration') ?? initializeApp(config,'study-integration');
 const studyAuth=getAuth(studyApp), wordAuth=getAuth(getApp());
+const studyAuthReady=setPersistence(studyAuth,browserLocalPersistence);
 const wordDb=getFirestore(getApp());
 const studyDb=getFirestore(studyApp,'study-data');
 const functions=getFunctions(studyApp,'asia-northeast3');
@@ -18,6 +19,7 @@ panel.className='study-link-panel';
 panel.setAttribute('aria-label','스터디 연동 설정');
 panel.innerHTML=`<div class="study-link-summary"><div><strong>스터디 연동</strong><p data-study-link-account>단어앱 기록에 자동 저장</p></div></div><p data-study-link-status role="status">단어 카드나 테스트를 열면 자동으로 시간을 측정합니다.</p><div class="study-link-actions"><button type="button" data-study-connect>스터디 계정 연결</button><button type="button" data-study-disconnect hidden>연동 해제</button><a href="https://junhyuk1203.github.io/study/study.html" target="_blank" rel="noopener">스터디 기록 ↗</a></div><p class="study-link-help">단어와 테스트 학습시간이 합산됩니다. 설정·기록 화면이나 10초 무입력 시 일시정지하고, 다시 학습하면 이어서 측정합니다. 앱을 나가면 자동 저장·종료됩니다.</p>`;
 document.querySelector('#settings-modal .sheet-header').nextElementSibling.firstElementChild.after(panel);
+panel.querySelector('.study-link-help').append(' 연결은 저장되며 앱을 다시 열면 자동 복원됩니다.');
 const timeCapsule=document.createElement('output');
 timeCapsule.className='study-time-capsule';
 timeCapsule.dataset.studyLinkTime='';
@@ -40,6 +42,7 @@ document.body.append(recordsDialog);
 const recordMode=document.createElement('button');recordMode.type='button';recordMode.textContent='이전 기기 기록 보기';recordMode.hidden=true;recordsDialog.querySelector('h2').after(recordMode);
 const $=selector=>panel.querySelector(selector);
 let tracker,linkedTracker,context='',linkedContext='',lastActivity=performance.now(),wordUid=null,ready=false,studyReady=false,token='',message='',outboxBusy=false,focused=document.hasFocus();
+let restoredWordUid='',restoringConnection=false,restoreRetryAt=0,savedConnection='',savingConnection=null,saveRetryAt=0,unlinking=false;
 let linkedStats={key:'',subjectId:null,today:null,days:{},word:null,clock:null,error:''},linkedWatches=[],showDeviceRecords=false;
 function linkedSeconds(){
   if(!linkedStats.today||!linkedStats.subjectId)return null;
@@ -82,8 +85,9 @@ function learning() {
 }
 function paint() {
   const linked=Boolean(studyAuth.currentUser?.emailVerified);
-  $('[data-study-link-account]').textContent=linked?`스터디: ${studyAuth.currentUser.email}`:'단어앱 기록에 자동 저장';
+  $('[data-study-link-account]').textContent=!studyReady||restoringConnection?'이전 스터디 연결 복원 중…':linked?`스터디: ${studyAuth.currentUser.email}`:'단어앱 기록에 자동 저장';
   $('[data-study-connect]').hidden=linked;
+  $('[data-study-connect]').disabled=!studyReady||restoringConnection;
   $('[data-study-disconnect]').hidden=!studyAuth.currentUser;
   $('[data-study-disconnect]').disabled=Boolean(linkedTracker?.busy);
   const seconds=linked?linkedSeconds():todayStudySeconds(storage(`superword:history:${wordUid}`).read()||{},tracker?.session,tracker?.record?.sessionId);
@@ -95,12 +99,20 @@ function paint() {
 }
 function makeTracker() {
   if(!ready || !studyReady)return;
+  if(wordUid&&!studyAuth.currentUser&&(restoringConnection||restoredWordUid!==wordAuth.currentUser.uid&&Date.now()>=restoreRetryAt)) {
+    void restoreConnection();return;
+  }
   const user=studyAuth.currentUser;
   const linked=Boolean(user?.emailVerified),next=wordUid||'guest';
+  if(linked&&wordUid&&!unlinking&&Date.now()>=saveRetryAt)void persistConnection().catch(()=>{saveRetryAt=Date.now()+10000;message='스터디 연결을 서버에 저장하지 못했습니다. 자동으로 다시 시도합니다.';paint();});
   if(next!==context) {
     void tracker?.finish();context=next;
     const uid=wordUid;
-    tracker=new AutoStudyTimer({store:storage(`superword:study:${next}:${tabId}:local`),api:localApi(storage(`superword:study-local:${next}:${tabId}`),()=>Date.now(),row=>saveHistory(uid,row)),onChange:paint});
+    const deviceApi=localApi(storage(`superword:study-local:${next}:${tabId}`),()=>Date.now(),row=>saveHistory(uid,row));
+    tracker=new AutoStudyTimer({store:storage(`superword:study:${next}:${tabId}:local`),api:{...deviceApi,async sync(record){
+      if(record.tracking&&!tracker.tracking)await prepareWordStart();
+      return deviceApi.sync(record);
+    }},onChange:paint});
     if(tracker.record)void tracker.update(false);
   }
   const remoteContext=linked&&wordUid?`${wordUid}:${user.uid}`:'';
@@ -124,12 +136,47 @@ function makeTracker() {
       await guarded('ensureProfile',{displayName:name.length>=2?name:'회원'});
       return guarded('startWordStudy',record);
     },
-    sync:record=>guarded('syncWordStudy',{...record,present:appVisible()&&Boolean(wordUid)}),finish:record=>guarded('finishStudySession',record)
+    async sync(record){
+      if(record.tracking&&!linkedTracker.tracking)await prepareWordStart();
+      return guarded('syncWordStudy',{...record,present:appVisible()&&Boolean(wordUid)});
+    },finish:record=>guarded('finishStudySession',record)
   };
   linkedTracker=new AutoStudyTimer({api,store,onChange:paint,keepAlive:true});
   // Recover the saved session paused, then resume when a learning view is visible.
   if(linkedTracker.record)void linkedTracker.update(false,!appVisible());else void linkedTracker.update(learning(),!appVisible());
   paint();
+}
+async function persistConnection() {
+  const word=wordAuth.currentUser,study=studyAuth.currentUser;
+  if(unlinking||!word?.emailVerified||!study?.emailVerified)return;
+  const key=`${word.uid}:${study.uid}`;
+  if(savedConnection===key)return;
+  if(savingConnection?.key===key)return savingConnection.promise;
+  const promise=(async()=>{
+    await call('saveWordStudyLink',{wordIdToken:await word.getIdToken()});
+    if(wordAuth.currentUser?.uid===word.uid&&studyAuth.currentUser?.uid===study.uid)savedConnection=key;
+  })();
+  savingConnection={key,promise};
+  try{await promise;}finally{if(savingConnection?.promise===promise)savingConnection=null;}
+}
+async function restoreConnection() {
+  const word=wordAuth.currentUser;
+  if(restoringConnection||!word?.emailVerified)return;
+  restoringConnection=true;restoredWordUid=word.uid;paint();
+  try {
+    const result=await call('restoreWordStudyLink',{wordIdToken:await word.getIdToken()});
+    if(result.linked&&wordAuth.currentUser?.uid===word.uid&&!studyAuth.currentUser)await signInWithCustomToken(studyAuth,result.token);
+    message='';
+  }catch{restoredWordUid='';restoreRetryAt=Date.now()+10000;message='이전 스터디 연결을 복원하지 못했습니다. 자동으로 다시 시도합니다.';}
+  finally{restoringConnection=false;makeTracker();paint();}
+}
+let wordStartPreparation=null;
+function prepareWordStart() {
+  if(!studyAuth.currentUser?.emailVerified)return Promise.resolve();
+  if(!wordStartPreparation)wordStartPreparation=call('prepareWordStudy',{}).then(reply=>{
+    if(reply.cameraStopped!==true)throw new Error('얼굴인식 종료를 확인하지 못했습니다. 다시 시도합니다.');
+  }).finally(()=>{wordStartPreparation=null;});
+  return wordStartPreparation;
 }
 function tick(){watchLinkedStats();makeTracker();const active=learning();void tracker?.update(active,!appVisible());void linkedTracker?.update(active,!appVisible());paint();}
 for(const type of ['pointerdown','pointermove','keydown','input','wheel','touchstart'])document.addEventListener(type,event=>{if(event.isTrusted)lastActivity=performance.now();},{capture:true,passive:true});
@@ -150,17 +197,21 @@ function keepaliveFinish() {
 }
 window.addEventListener('pagehide',()=>{keepaliveFinish();void tracker?.finish();void linkedTracker?.finish();});
 window.addEventListener('pageshow',()=>{lastActivity=performance.now();tick();});
-onIdTokenChanged(studyAuth,async user=>{try{token=user?await user.getIdToken():'';}catch{token='';}});
+studyAuthReady.then(()=>{
+  onIdTokenChanged(studyAuth,async user=>{try{token=user?await user.getIdToken():'';}catch{token='';}});
+  onAuthStateChanged(studyAuth,()=>{studyReady=true;watchLinkedStats();makeTracker();paint();});
+}).catch(()=>{studyReady=true;message='이 브라우저에서 스터디 연결을 저장하지 못했습니다. 사이트 저장소 사용을 허용한 뒤 다시 열어 주세요.';paint();});
 onAuthStateChanged(wordAuth,user=>{wordUid=user?.emailVerified?(user.email==='tntgame1203@gmail.com'?'default_user':user.uid):null;ready=true;makeTracker();});
-onAuthStateChanged(studyAuth,()=>{studyReady=true;watchLinkedStats();makeTracker();paint();});
 $('[data-study-connect]').addEventListener('click',()=>dialog.showModal());
 dialog.addEventListener('close',()=>{lastActivity=performance.now();tick();});
 async function login(action) {
   const errorNode=dialog.querySelector('[data-study-login-error]');errorNode.textContent='연결 중…';
   try {
+    await studyAuthReady;
     await linkedTracker?.finish();
     await action();
     if(!studyAuth.currentUser.emailVerified)throw new Error('스터디 계정의 이메일을 먼저 인증해 주세요.');
+    await persistConnection();
     errorNode.textContent='';dialog.querySelector('[name=password]').value='';dialog.close();message='';
   }catch(error){errorNode.textContent=error.code==='auth/invalid-credential'?'이메일과 비밀번호를 확인해 주세요.':error.code==='auth/unauthorized-domain'?'현재 단어앱 주소에서 스터디 로그인이 허용되지 않습니다.':error.message;}
 }
@@ -171,8 +222,10 @@ dialog.querySelector('[data-study-google]').addEventListener('click',()=>{
 });
 dialog.querySelector('[data-study-email-form]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;void login(()=>signInWithEmailAndPassword(studyAuth,form.email.value,form.password.value));});
 $('[data-study-disconnect]').addEventListener('click',async()=>{
-  try {await linkedTracker?.finish();if(linkedTracker?.record)throw new Error('기록 저장이 끝난 뒤 연동을 해제할 수 있습니다.');await signOut(studyAuth);message='';}
+  unlinking=true;
+  try {await linkedTracker?.finish();if(linkedTracker?.record)throw new Error('기록 저장이 끝난 뒤 연동을 해제할 수 있습니다.');await savingConnection?.promise;await call('removeWordStudyLink',{wordIdToken:await wordAuth.currentUser.getIdToken()});restoredWordUid=wordAuth.currentUser.uid;savedConnection='';await signOut(studyAuth);message='';}
   catch(error){message=error.message;paint();}
+  finally{unlinking=false;}
 });
 setInterval(tick,1000);
 
