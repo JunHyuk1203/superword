@@ -2,14 +2,15 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://upload.wikimedia.org https://*.googleusercontent.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://api.github.com https://asia-northeast3-goodnotesword-454fa.cloudfunctions.net; frame-src https://goodnotesword-454fa.firebaseapp.com https://accounts.google.com; media-src 'self' blob: https://translate.google.com; worker-src 'self' blob:" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://upload.wikimedia.org https://*.googleusercontent.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://api.github.com https://asia-northeast3-goodnotesword-454fa.cloudfunctions.net https://asia-northeast3-study-junhyuk1203-20261021.cloudfunctions.net; frame-src https://goodnotesword-454fa.firebaseapp.com https://study-junhyuk1203-20261021.firebaseapp.com https://accounts.google.com; media-src 'self' blob: https://translate.google.com; worker-src 'self' blob:" />
+  <link rel="stylesheet" href="study-integration.css?v=20261022-2" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="google-site-verification" content="htGRl-F5QkKiXlIIoXft4Uaf-y1nVhOtp3x-o7T_S2U" />
   <meta name="referrer" content="no-referrer" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>superword</title>
+  <title>SP word</title>
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="apple-touch-icon" href="logo.png" />
   <meta name="description" content="단어장을 관리하고 AI로 단어를 추출하여 학습하는 스마트 단어장 앱입니다." />
@@ -37,8 +38,8 @@
   <!-- ========== LANDING SCREEN ========== -->
   <div id="landing-screen" class="landing-screen hidden">
     <div class="landing-content">
-      <img src="logo.png" alt="superword logo" class="landing-logo">
-      <h1 class="landing-title">superword</h1>
+      <img src="logo.png" alt="SP word 로고" class="landing-logo">
+      <h1 class="landing-title">SP word</h1>
       <p class="landing-subtitle">가장 스마트한 나만의 단어장 서비스.<br>언제 어디서나 단어를 학습하고 클라우드에 안전하게 보관하세요.</p>
       
       <button id="landing-start-btn" class="primary-action-btn" style="margin-top: 40px;">지금 시작하기</button>
@@ -57,7 +58,7 @@
       <div class="auth-container">
         <div class="auth-header">
           <div class="bg-orb orb-1" style="width: 150px; height: 150px; top: -50px; left: -50px;"></div>
-          <h1 class="auth-title">superword</h1>
+          <h1 class="auth-title">SP word</h1>
           <p class="auth-subtitle">학습을 시작하려면 로그인하세요</p>
         </div>
         
@@ -112,7 +113,7 @@
               <span class="ios-nav-back-chevron">‹</span>
               <span class="ios-back-label-slot"><span id="ios-back-text">단어장 목록</span></span>
             </button>
-            <div id="ios-nav-title-inline" class="ios-nav-title-inline" aria-hidden="true">superword</div>
+            <div id="ios-nav-title-inline" class="ios-nav-title-inline" aria-hidden="true">SP word</div>
             <div class="ios-nav-actions">
               <span id="word-count-badge" class="badge badge-ai hidden" style="font-size:12px; padding:2px 6px;">0 단어</span>
               <button id="settings-btn" class="ios-nav-action-btn" title="설정">
@@ -233,7 +234,7 @@
     </div>
 
     <footer class="app-footer">
-      <p>superword ✦ GoodNotes 호환 CSV 내보내기</p>
+      <p>SP word ✦ GoodNotes 호환 CSV 내보내기</p>
       <p id="build-time" style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;"></p>
     </footer>
     </div> <!-- End library-content -->
@@ -775,5 +776,6 @@
   <span style="font-family:'Pretendard'; opacity:0; pointer-events:none;">.</span>
   <span style="font-family:'Pretendard'; font-weight:700; opacity:0; pointer-events:none;">.</span>
   <script type="module" src="app.js?v=layout17"></script>
+  <script type="module" src="study-integration.js?v=20261022-5"></script>
 </body>
 </html>

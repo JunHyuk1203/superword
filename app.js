@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// superword - app.js v3.0 (Study Edition)
+// SP word - app.js v3.0 (Study Edition)
 // ═══════════════════════════════════════════════════════════════════════════════
 console.log("GoodNotes Vocab App Loaded - v11.0 (Apple HIG Design System)");
 

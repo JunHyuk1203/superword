@@ -25,6 +25,17 @@ before(async () => {
 });
 after(async () => {await env?.cleanup();});
 
+test('personal timer records are private and reject invalid payloads',async()=>{
+  const db=verified('alice'),ref=doc(db,'users/alice/learningSessions/timer');
+  const record={id:'timer',startedAtMs:1000,updatedAtMs:2000,seconds:1,dailySeconds:{'2026-10-22':1},status:'finished'};
+  await assertSucceeds(setDoc(ref,record));
+  await assertSucceeds(getDocs(query(collection(db,'users/alice/learningSessions'),orderBy('startedAtMs','desc'))));
+  await assertFails(getDoc(doc(verified('bob'),'users/alice/learningSessions/timer')));
+  await assertFails(setDoc(ref,{...record,seconds:-1}));
+  await assertFails(setDoc(ref,{...record,studyCredit:10000}));
+  await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(),'users/alice/learningSessions/timer')));
+});
+
 test('verified user can list existing books, chapters, ordered words and history', async () => {
   const db = verified('alice');
   for (const suffix of ['books','books/book/chapters']) await assertSucceeds(getDocs(collection(db,`users/alice/${suffix}`)));

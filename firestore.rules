@@ -16,6 +16,24 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if ownsUserPath(userId);
 
+      // Personal vocabulary timer records. Study service credit is calculated
+      // independently by its server and never trusts these client records.
+      match /learningSessions/{sessionId} {
+        allow read, delete: if ownsUserPath(userId);
+        allow create, update: if ownsUserPath(userId)
+          && request.resource.data.keys().hasOnly(['id','startedAtMs','updatedAtMs','seconds','dailySeconds','status'])
+          && request.resource.data.id == sessionId
+          && request.resource.data.startedAtMs is number
+          && request.resource.data.updatedAtMs is number
+          && request.resource.data.updatedAtMs >= request.resource.data.startedAtMs
+          && request.resource.data.seconds is int
+          && request.resource.data.seconds >= 0
+          && request.resource.data.seconds <= 43200
+          && request.resource.data.dailySeconds is map
+          && request.resource.data.dailySeconds.size() <= 2
+          && request.resource.data.status in ['active','paused','finished'];
+      }
+
       match /books/{bookId} {
         allow read, write: if ownsUserPath(userId);
         match /chapters/{chapterId} {
