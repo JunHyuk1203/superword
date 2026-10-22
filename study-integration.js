@@ -2,7 +2,7 @@ import {initializeApp,getApps,getApp} from 'https://www.gstatic.com/firebasejs/1
 import {getAuth,onAuthStateChanged,signInWithPopup,signInWithEmailAndPassword,signInWithCustomToken,GoogleAuthProvider,signOut,onIdTokenChanged,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
 import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js';
 import {getFirestore,doc,setDoc,collection,query,orderBy,limit,getDocs,onSnapshot,documentId} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
-import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261023-1';
+import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261023-2';
 import {wordLiveSeconds} from './study-word-time.js?v=20261022-1';
 
 const config={apiKey:'AIzaSyBF8-jNyMdm1izozV2S5OoB6KtnIQ716Yw',authDomain:'study-junhyuk1203-20261021.firebaseapp.com',projectId:'study-junhyuk1203-20261021',appId:'1:555183292594:web:64b739b20ca4b32d63c9ab'};
@@ -78,6 +78,7 @@ function storage(key) {
 }
 function learning() {
   const shown=id=>{const node=document.getElementById(id);return node && !node.classList.contains('hidden');};
+  if(!shown('library-content')||shown('landing-screen'))return false;
   const test=shown('test-modal') && ['test-flash','test-quiz','test-short','test-trace'].some(shown);
   const blocked=[...document.querySelectorAll('.modal-screen.show,.modal-screen:not(.hidden)')].some(node=>node.id!=='test-modal') || dialog.open || recordsDialog.open;
   const words=document.getElementById('layer-words')?.classList.contains('active-lib') && !shown('test-modal') && ['words-card-view','words-swipe-view'].some(id=>document.getElementById(id)?.classList.contains('active-view')) && document.querySelector('#words-card-view .word-card,#words-swipe-view .swipe-card');
@@ -129,7 +130,8 @@ function makeTracker() {
     async start(record){
       if(record.sessionId)return guarded('syncWordStudy',{...record,sequence:Date.now(),tracking:false,present:appVisible()}).catch(async error=>{
         if(error.code!=='functions/failed-precondition')throw error;
-        await guarded('finishStudySession',record);
+        await guarded('finishStudySession',record).catch(error=>{if(error.code!=='functions/not-found')throw error;});
+        if(!learning())return null;
         await prepareWordStart();
         return guarded('startWordStudy',record);
       });

@@ -14,6 +14,13 @@ test('HTTP UUID fallback uses secure random bytes and preserves server controlle
 function memory(){let value=null;return {read:()=>value,write:next=>{value=next;}};}
 function response(id='session'){return {sessionId:id,session:{sequence:0,serverNowMs:100000,accumulatedSeconds:0,activeSinceMs:100000,leaseUntilMs:130000}};}
 
+test('discarding an expired saved session while idle does not create or run another',async()=>{
+ const store=memory();store.write({sessionId:'expired',controllerId:'same'});let starts=0;
+ const timer=new AutoStudyTimer({store,keepAlive:true,startWhenIdle:false,api:{start:async()=>{starts++;return null;},sync:async()=>{throw Error('Unexpected tracking');}}});
+ await timer.update(false);await timer.update(false);
+ assert.equal(starts,1);assert.equal(store.read(),null);assert.equal(timer.session,null);assert.equal(timer.error,'');
+});
+
 test('only signed in, visible card/test learning counts; idle, editor and modal do not',()=>{
   const active={signedIn:true,visible:true,words:true,test:false,blocked:false,idleMs:1000};
   assert.equal(isLearning(active),true);

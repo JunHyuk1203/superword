@@ -26,9 +26,9 @@ export class AutoStudyTimer {
         this.record ??= {controllerId:studyUuid()};
         this.store.write(this.record);
         const result=await this.api.start(this.record);
-        this.record={...this.record,sessionId:result.sessionId};
+        this.record=result?{...this.record,sessionId:result.sessionId}:null;
         this.store.write(this.record);
-        this.observe(result);
+        if(result)this.observe(result);
         this.lastSync=0;
       }
       if (this.session && this.finishing) {

@@ -24,6 +24,7 @@ async function main(){
         document.getElementById('words-card-view').innerHTML='<div class="word-card">apple 사과</div>';
         window.testNow=Date.parse('2026-10-22T03:00:00Z');Date.now=()=>window.testNow;window.testPerformanceNow=1000;performance.now=()=>window.testPerformanceNow;window.savedRows={};window.testLinked=width===1280;window.remoteCalls=[];
         if(width===1280)localStorage.setItem('superword:history:fixture',JSON.stringify({legacy:{id:'legacy',startedAtMs:window.testNow-1800000,seconds:480,dailySeconds:{'2026-10-22':480},status:'finished'}}));
+        if(width===1280){sessionStorage.setItem('superword:study-tab','fixture-tab');localStorage.setItem('superword:study:fixture:study-fixture:fixture-tab:remote',JSON.stringify({controllerId:'stale-controller',sessionId:'expired-session'}));}
       },width);
       const sdk=`
         const apps=[{name:'word'}],getApps=()=>apps,getApp=()=>apps[0],initializeApp=(_,name)=>{const app={name};apps.push(app);return app;};
@@ -48,6 +49,8 @@ async function main(){
           }
           if(name==='startWordStudy'){serverWord={sessionId:'remote-session-'+(++sessionNumber),subjectId:'vocab',sequence:0,segments:[],serverNowMs:Date.now(),accumulatedSeconds:0,activeSinceMs:null,leaseUntilMs:null};deliver();return {data:{sessionId:serverWord.sessionId,session:{...serverWord}}};}
           if(name==='syncWordStudy'||name==='finishStudySession'){
+            if(name==='syncWordStudy'&&!serverWord)throw Object.assign(new Error('진행 중인 영단어 학습이 없습니다.'),{code:'functions/failed-precondition'});
+            if(name==='finishStudySession'&&!serverWord)throw Object.assign(new Error('학습 기록이 없습니다.'),{code:'functions/not-found'});
             if(data.tracking&&!window.cameraStopAcknowledged)throw new Error('Word timer ran before camera stop acknowledgement');
             const delta=serverWord?.activeSinceMs==null?0:Math.max(0,Math.floor((Math.min(Date.now(),serverWord.leaseUntilMs)-serverWord.activeSinceMs)/1000));
             if(serverWord){serverWord.accumulatedSeconds+=delta;serverWord.segments=[{date:'2026-10-22',seconds:serverWord.accumulatedSeconds}];serverStats={subjectSeconds:{vocab:serverStats.subjectSeconds.vocab+delta},wordCheckpoint:{sessionId:serverWord.sessionId,seconds:serverWord.accumulatedSeconds}};}
@@ -67,9 +70,13 @@ async function main(){
       `;
       await page.addScriptTag({type:'module',content:sdk+'\n'+core+'\n'+shared+'\n'+source});
       await page.waitForFunction(()=>document.querySelector('[data-study-link-account]')?.textContent===(window.testLinked?'스터디: study@example.com':'단어앱 기록에 자동 저장'));
+      if(width===1280)await page.waitForFunction(()=>!localStorage.getItem('superword:study:fixture:study-fixture:fixture-tab:remote'));
       assert.equal(await page.evaluate(()=>window.remoteCalls.includes('startWordStudy')),false);
       assert.equal(await page.evaluate(()=>window.remoteCalls.includes('prepareWordStudy')),false);
-      await page.evaluate(()=>{document.getElementById('layer-books').classList.remove('active-lib');document.getElementById('layer-words').classList.add('active-lib');});
+      await page.evaluate(()=>{document.getElementById('library-content').classList.add('hidden');document.getElementById('layer-books').classList.remove('active-lib');document.getElementById('layer-words').classList.add('active-lib');});
+      await page.waitForTimeout(250);
+      assert.equal(await page.evaluate(()=>window.remoteCalls.includes('prepareWordStudy')),false);
+      await page.evaluate(()=>document.getElementById('library-content').classList.remove('hidden'));
       await page.waitForFunction(()=>document.querySelector('[data-study-link-status]')?.textContent.includes('학습 중')).catch(async error=>{throw new Error(JSON.stringify({errors,status:await page.locator('[data-study-link-status]').textContent(),cause:error.message}));});
       assert.equal(await page.evaluate(()=>window.studyPersistence),'LOCAL');
       if(width===1280){assert.equal(await page.evaluate(()=>window.autoRestored),true);await page.waitForFunction(()=>window.serverLinkSaved===true);}
@@ -84,7 +91,7 @@ async function main(){
       await page.waitForFunction(()=>document.querySelector('[data-record-today]')?.textContent==='10초');
       if(width===1280) {
         await page.waitForFunction(()=>window.remoteInputs.some(row=>row.name==='syncWordStudy'&&row.data.tracking===false));
-        assert.equal(await page.evaluate(()=>window.remoteCalls.includes('finishStudySession')),false);
+        assert.equal(await page.evaluate(()=>window.remoteCalls.filter(name=>name==='finishStudySession').length),1);
         assert.ok((await page.evaluate(()=>window.remoteCalls)).includes('syncWordStudy'));
         assert.equal(await page.locator('[data-study-link-account]').textContent(),'스터디: study@example.com');
       }
