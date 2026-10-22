@@ -2,7 +2,7 @@ import {initializeApp,getApps,getApp} from 'https://www.gstatic.com/firebasejs/1
 import {getAuth,onAuthStateChanged,signInWithPopup,signInWithEmailAndPassword,signInWithCustomToken,GoogleAuthProvider,signOut,onIdTokenChanged,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
 import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js';
 import {getFirestore,doc,setDoc,collection,query,orderBy,limit,getDocs,onSnapshot,documentId} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
-import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261023-3';
+import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261023-4';
 import {wordLiveSeconds} from './study-word-time.js?v=20261022-1';
 
 const config={apiKey:'AIzaSyBF8-jNyMdm1izozV2S5OoB6KtnIQ716Yw',authDomain:'study-junhyuk1203-20261021.firebaseapp.com',projectId:'study-junhyuk1203-20261021',appId:'1:555183292594:web:64b739b20ca4b32d63c9ab'};
@@ -76,13 +76,13 @@ const tabId=sessionStorage.getItem(tabKey)||studyUuid();sessionStorage.setItem(t
 function storage(key) {
   return {read(){try{return JSON.parse(localStorage.getItem(key)||'null');}catch{return null;}},write(value){if(value==null)localStorage.removeItem(key);else localStorage.setItem(key,JSON.stringify(value));}};
 }
-function learning() {
+function learning(ignoreIdle=false) {
   const shown=id=>{const node=document.getElementById(id);return node && !node.classList.contains('hidden');};
   if(!shown('library-content')||shown('landing-screen'))return false;
   const test=shown('test-modal') && ['test-flash','test-quiz','test-short','test-trace'].some(shown);
   const blocked=[...document.querySelectorAll('.modal-screen.show,.modal-screen:not(.hidden)')].some(node=>node.id!=='test-modal') || dialog.open || recordsDialog.open;
   const words=document.getElementById('layer-words')?.classList.contains('active-lib') && !shown('test-modal') && ['words-card-view','words-swipe-view'].some(id=>document.getElementById(id)?.classList.contains('active-view')) && document.querySelector('#words-card-view .word-card,#words-swipe-view .swipe-card');
-  return isLearning({visible:appVisible(),signedIn:Boolean(wordUid),words:Boolean(words),test,blocked,idleMs:performance.now()-lastActivity});
+  return isLearning({visible:appVisible(),signedIn:Boolean(wordUid),words:Boolean(words),test,blocked,idleMs:ignoreIdle?0:performance.now()-lastActivity});
 }
 function paint() {
   const linked=Boolean(studyAuth.currentUser?.emailVerified);
@@ -132,17 +132,27 @@ function makeTracker() {
         if(error.code!=='functions/failed-precondition')throw error;
         await guarded('finishStudySession',record).catch(error=>{if(error.code!=='functions/not-found')throw error;});
         if(!learning())return null;
-        await prepareWordStart();
-        return guarded('startWordStudy',record);
+        return begin(record);
       });
-      await prepareWordStart();
-      return guarded('startWordStudy',record);
+      return begin(record);
     },
     async sync(record){
-      if(record.tracking&&!linkedTracker.tracking)await prepareWordStart();
       return guarded('syncWordStudy',{...record,present:appVisible()&&Boolean(wordUid)});
     },finish:record=>guarded('finishStudySession',record)
   };
+  async function begin(record) {
+    const input={...record,tracking:learning(true)};
+    let result;
+    try {result=await guarded('startWordStudy',input);}
+    catch(error) {
+      if(error.code!=='functions/failed-precondition'||!/계정을 먼저 설정/.test(error.message))throw error;
+      const name=(user.displayName||'회원').replace(/[\p{Cc}\p{Cf}]/gu,'').trim().slice(0,20);
+      await guarded('ensureProfile',{displayName:name.length>=2?name:'회원'});
+      result=await guarded('startWordStudy',input);
+    }
+    if(input.tracking&&learning(true)){lastActivity=performance.now();linkedTracker.desired=true;}
+    return {...result,initialSyncComplete:true};
+  }
   linkedTracker=new AutoStudyTimer({api,store,onChange:paint,keepAlive:true,startWhenIdle:false,heartbeatMs:5000});
   // Recover the saved session paused, then resume when a learning view is visible.
   if(linkedTracker.record)void linkedTracker.update(false,!appVisible());else void linkedTracker.update(learning(),!appVisible());
@@ -176,13 +186,12 @@ let wordStartPreparation=null;
 function prepareWordStart() {
   if(!studyAuth.currentUser?.emailVerified)return Promise.resolve();
   if(!wordStartPreparation)wordStartPreparation=(async()=>{
-    const user=studyAuth.currentUser;
-    const name=(user.displayName||'회원').replace(/[\p{Cc}\p{Cf}]/gu,'').trim().slice(0,20);
-    await call('ensureProfile',{displayName:name.length>=2?name:'회원'});
-    return call('prepareWordStudy',{});
-  })().then(reply=>{
-    if(reply.cameraStopped!==true)throw new Error('얼굴인식 종료를 확인하지 못했습니다. 다시 시도합니다.');
-  }).finally(()=>{wordStartPreparation=null;});
+    const remote=linkedTracker;
+    if(!remote)throw new Error('스터디 연결을 준비 중입니다.');
+    await remote.update(learning(),!appVisible());
+    await remote.pending;
+    if(!remote.tracking)throw new Error(remote.error||'스터디 타이머 전환을 확인하는 중입니다.');
+  })().finally(()=>{wordStartPreparation=null;});
   return wordStartPreparation;
 }
 function tick(){watchLinkedStats();makeTracker();const active=learning();void tracker?.update(active,!appVisible());void linkedTracker?.update(active,!appVisible());paint();}

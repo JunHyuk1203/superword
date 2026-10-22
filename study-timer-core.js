@@ -15,10 +15,15 @@ export class AutoStudyTimer {
     this.record=store.read(); this.session=null; this.desired=false; this.finishing=false; this.tracking=false;
     this.busy=false; this.retryAt=0; this.lastSync=0; this.sequence=0; this.error='';
   }
-  async update(active, finish=false) {
+  update(active, finish=false) {
     this.desired=active;
     this.finishing=this.finishing || finish;
-    if (this.busy || this.now()<this.retryAt) return;
+    if (this.busy) return Promise.resolve();
+    if (this.now()<this.retryAt) return Promise.resolve();
+    this.pending=this.run();
+    return this.pending;
+  }
+  async run() {
     this.busy=true;
     try {
       // A persisted start may have succeeded even if its reply was lost.
@@ -29,7 +34,7 @@ export class AutoStudyTimer {
         this.record=result?{...this.record,sessionId:result.sessionId}:null;
         this.store.write(this.record);
         if(result)this.observe(result);
-        this.lastSync=0;
+        this.lastSync=result?.initialSyncComplete?this.now():0;
       }
       if (this.session && this.finishing) {
         const result=await this.api.finish(this.record);
@@ -49,10 +54,10 @@ export class AutoStudyTimer {
         await this.api.finish(this.record).then(()=>{this.record=null;this.session=null;this.store.write(null);}).catch(()=>{});
       }
       this.error=error.code==='functions/internal'?'스터디 서버에서 기록을 처리하지 못했습니다. 잠시 후 자동으로 다시 시도합니다.':error.message || '인터넷 연결을 확인해 주세요.';
-      this.retryAt=this.now()+10000;
+      this.retryAt=this.now()+1000;
     } finally {this.busy=false;this.onChange();}
     // Handle leaving during an in-flight start/sync without waiting for a tick.
-    if (this.session && !this.error && (this.finishing || this.tracking!==this.desired)) return this.update(this.desired,this.finishing);
+    if (this.session && !this.error && (this.finishing || this.tracking!==this.desired)) return this.run();
   }
   finish(){return this.update(false,true);}
   observe(result) {

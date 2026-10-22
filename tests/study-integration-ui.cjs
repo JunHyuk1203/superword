@@ -34,7 +34,6 @@ async function main(){
         const deliver=()=>{for(const item of subscriptions)if(!item.stopped)item.callback({data:()=>item.path.includes('dailyStats')?serverStats:{subjects:[{id:'vocab',name:'영단어'}],wordSnapshot:serverWord}});};
         const httpsCallable=(_,name)=>async data=>{
           window.remoteCalls.push(name);(window.remoteInputs||=[]).push({name,data});
-          if(name==='startWordStudy'&&!window.cameraStopAcknowledged)throw new Error('Word session was created before camera shutdown acknowledgement');
           if(name==='saveWordStudyLink'){window.serverLinkSaved=true;return {data:{linked:true}};}
           if(name==='restoreWordStudyLink')return {data:window.testLinked?{linked:true,token:'fixture-token'}:{linked:false}};
           if(name==='removeWordStudyLink')return {data:{linked:false}};
@@ -47,7 +46,15 @@ async function main(){
             window.cameraStopAcknowledged=true;
             return {data:{cameraStopped:true}};
           }
-          if(name==='startWordStudy'){serverWord={sessionId:'remote-session-'+(++sessionNumber),subjectId:'vocab',sequence:0,segments:[],serverNowMs:Date.now(),accumulatedSeconds:0,activeSinceMs:null,leaseUntilMs:null};deliver();return {data:{sessionId:serverWord.sessionId,session:{...serverWord}}};}
+          if(name==='startWordStudy'){
+            if(!window.cameraStopAcknowledged){
+              window.testPerformanceNow+=12000;
+              tick();
+              await new Promise(resolve=>setTimeout(resolve,150));
+            }
+            window.cameraStopAcknowledged=true;
+            serverWord={sessionId:'remote-session-'+(++sessionNumber),subjectId:'vocab',sequence:0,segments:[],serverNowMs:Date.now(),accumulatedSeconds:0,activeSinceMs:data.tracking?Date.now():null,leaseUntilMs:data.tracking?Date.now()+10000:null};deliver();return {data:{sessionId:serverWord.sessionId,session:{...serverWord}}};
+          }
           if(name==='syncWordStudy'||name==='finishStudySession'){
             if(name==='syncWordStudy'&&!serverWord)throw Object.assign(new Error('진행 중인 영단어 학습이 없습니다.'),{code:'functions/failed-precondition'});
             if(name==='finishStudySession'&&!serverWord)throw Object.assign(new Error('학습 기록이 없습니다.'),{code:'functions/not-found'});
@@ -80,7 +87,8 @@ async function main(){
       await page.waitForFunction(()=>document.querySelector('[data-study-link-status]')?.textContent.includes('학습 중')).catch(async error=>{throw new Error(JSON.stringify({errors,status:await page.locator('[data-study-link-status]').textContent(),cause:error.message}));});
       assert.equal(await page.evaluate(()=>window.studyPersistence),'LOCAL');
       if(width===1280){assert.equal(await page.evaluate(()=>window.autoRestored),true);await page.waitForFunction(()=>window.serverLinkSaved===true);}
-      if(width===1280)await page.waitForFunction(()=>window.remoteInputs.some(row=>row.name==='syncWordStudy'&&row.data.tracking===true));
+      if(width===1280)await page.waitForFunction(()=>window.remoteInputs.some(row=>row.name==='startWordStudy'&&row.data.tracking===true));
+      if(width===1280)assert.equal(await page.evaluate(()=>window.remoteCalls.includes('prepareWordStudy')),false);
       assert.equal(await page.locator('.study-link-panel').evaluate(node=>node.closest('#settings-modal')?.id),'settings-modal');
       assert.equal(await page.locator('.study-time-capsule').evaluate(node=>Boolean(node.closest('.ios-nav-actions'))),true);
       assert.equal(await page.locator('#library-content .study-link-panel').count(),0);
