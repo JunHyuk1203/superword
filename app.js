@@ -27,6 +27,7 @@ window.setTheme = function(theme) {
 };
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { librarySubscriber } from "./library-read.js?v=20261023-3";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js";
 import {
   getFirestore, collection, doc, setDoc, getDocs, addDoc,
@@ -836,35 +837,7 @@ document.addEventListener('touchend', (e) => {
 document.addEventListener('touchcancel', cancelBackSwipe, { passive: true });
 
 // ─── Load Books ───────────────────────────────────────────────────────────────
-function subscribeLibrarySnapshot(reference, render, showError, container, retry) {
-  let active = true;
-  let retryButton = null;
-  const fail = error => {
-    if (!active) return;
-    clearTimeout(timer);
-    retryButton?.remove();
-    showError(error);
-    retryButton = document.createElement('button');
-    retryButton.type = 'button';
-    retryButton.className = 'small-btn library-retry';
-    retryButton.textContent = '다시 시도';
-    retryButton.onclick = retry;
-    container.appendChild(retryButton);
-  };
-  const timer = setTimeout(() => fail(new Error('연결이 지연되고 있습니다. 네트워크를 확인하고 다시 시도해 주세요.')), 15000);
-  const unsubscribe = onSnapshot(reference, snapshot => {
-    if (!active) return;
-    clearTimeout(timer);
-    retryButton?.remove();
-    render(snapshot);
-  }, fail);
-  return () => {
-    active = false;
-    clearTimeout(timer);
-    retryButton?.remove();
-    unsubscribe();
-  };
-}
+const subscribeLibrarySnapshot=librarySubscriber({onSnapshot,makeRef:path=>doc(db,path),getUser:()=>auth.currentUser,projectId:'goodnotesword-454fa'});
 
 function loadBooks() {
   resetLibraryNavigation();
@@ -913,7 +886,7 @@ function loadBooks() {
     }, (e) => {
       console.error(e);
       viewBooks.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--danger);">오류: ${escapeHTML(e.message)}</p>`;
-    }, viewBooks, loadBooks);
+    }, viewBooks, ()=>{unsubBooks?.();unsubBooks=null;loadBooks();});
   }
 }
 
@@ -974,7 +947,7 @@ function loadChapters(bookId, bookName) {
     }, (e) => {
       console.error(e);
       viewChapters.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--danger);">오류: ${escapeHTML(e.message)}</p>`;
-    }, viewChapters, () => loadChapters(bookId, bookName));
+    }, viewChapters, () => {unsubChapters?.();unsubChapters=null;loadChapters(bookId, bookName);});
   }
 }
 
@@ -1032,7 +1005,7 @@ function loadWords(bookId, chapterId, chapterName) {
       console.error(e);
       wordsCardView.innerHTML = `<p style="text-align:center;color:var(--danger);padding:2rem;">오류: ${escapeHTML(e.message)}</p>`;
       wordsTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--danger);">오류: ${escapeHTML(e.message)}</td></tr>`;
-    }, wordsCardView, () => loadWords(bookId, chapterId, chapterName));
+    }, wordsCardView, () => {unsubWords?.();unsubWords=null;loadWords(bookId, chapterId, chapterName);}, `users/${currentUser.uid}/books/${bookId}/chapters/${chapterId}/words`, 'order');
   }
 }
 

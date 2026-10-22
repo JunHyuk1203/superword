@@ -10,9 +10,12 @@ async function main() {
   const root = path.resolve(__dirname, '..');
   const source = await fs.readFile(path.join(root, 'app.js'), 'utf8');
   const imports = [...source.matchAll(/import\s*\{([\s\S]*?)\}\s*from\s*"[^"]+";/g)]
-    .flatMap(match => match[1].split(',').map(name => name.trim()).filter(Boolean));
+    .flatMap(match => match[1].split(',').map(name => name.trim()).filter(name=>name&&name!=='librarySubscriber'));
   const stubs = 'const ' + imports.map(name => `${name} = ${
     name === 'GoogleAuthProvider' ? 'class {}' :
+    name === 'getAuth' ? '()=>({currentUser:{uid:"fixture",getIdToken:async()=>"fixture"}})' :
+    name === 'collection' ? '(_db,path)=>({path})' :
+    name === 'query' ? 'reference=>reference' :
     name === 'initializeFirestore' ? '(_app, settings) => { window.firestoreSettings = settings; return {}; }' :
     name === 'httpsCallable' ? '() => async data => { (window.aiFixtureRequests ||= []).push(data); if (window.deferAiFixture) return new Promise(resolve => {window.resolveAiFixture = resolve;}); return {data: data.action === "appeal" ? {isApproved:true,fromCache:false} : {text:"fixture report"}}; }' :
     name === 'onAuthStateChanged' ? '(auth, callback) => { window.authFixture = callback; }' :
@@ -20,7 +23,9 @@ async function main() {
     name === 'onSnapshot' ? '(...args) => { window.snapshotCalls = (window.snapshotCalls || 0) + 1; const entry = {cancelled:false, deliver(words = []) {if (!this.cancelled) args[1]({empty:!words.length,size:words.length,forEach(callback){words.forEach((data,index)=>callback({data:()=>data,ref:{path:"fixture/words/"+index}}));}});}}; (window.snapshotEntries ||= []).push(entry); if (window.snapshotError) args[2](new Error(window.snapshotError)); else if (!window.deferSnapshots) entry.deliver(); return () => {entry.cancelled = true;}; }' :
     '(...args) => ({})'
   }`).join(',') + ';';
-  const instrumented = stubs + source.replace(/import\s*\{[\s\S]*?\}\s*from\s*"[^"]+";/g, '') + `
+  const librarySource=(await fs.readFile(path.join(root,'library-read.js'),'utf8')).replace(/^export /gm,'');
+  const libraryFixture=`const librarySubscriber=(()=>{${librarySource};return options=>librarySubscriber({...options,fetcher:async()=>{throw Error(window.snapshotError||'연결이 지연되고 있습니다.');}});})();`;
+  const instrumented = stubs + libraryFixture + source.replace(/import\s*\{[\s\S]*?\}\s*from\s*"[^"]+";/g, '') + `
     window.uiTest = {loadBooks, loadChapters, loadWords, setViewMode, openModal, closeModal,
       seed() { currentUser = {uid:'fixture'}; }, renderCardView, renderTableView,
       navigateSwipe,
@@ -221,11 +226,11 @@ async function main() {
     assert.ok(!(await page.locator('#view-chapters').textContent()).includes('로딩 중'));
     assert.equal(await page.evaluate(() => window.snapshotEntries.filter(entry => !entry.cancelled).length), 1);
     console.log('PASS delayed snapshots: repeated same/different book entry, one active listener');
-    const recovery = await page.evaluate(() => {
+    const recovery = await page.evaluate(async () => {
       const originalSetTimeout = window.setTimeout;
       const deadlines = [];
       window.setTimeout = (callback, delay, ...args) => {
-        if (delay === 15000) deadlines.push(callback);
+        if (delay === 5000) deadlines.push(callback);
         return originalSetTimeout(callback, delay, ...args);
       };
       const results = [];
@@ -239,6 +244,7 @@ async function main() {
           load();
           const expired = deadlines.at(-1);
           expired();
+          await new Promise(resolve=>setTimeout(resolve,0));
           const target = document.querySelector(container);
           const timeoutShown = target.textContent.includes('연결이 지연');
           target.querySelector('.library-retry').click();
@@ -746,7 +752,7 @@ async function main() {
     assert.ok((await page.locator('#history-detail-score').textContent()).includes(payload));
     await page.evaluate(payload => {window.authFixture(null); window.uiTest.seed(); window.snapshotError = payload; window.uiTest.loadBooks();}, payload);
     assert.equal(await page.locator('#view-books img').count(), 0);
-    assert.ok((await page.locator('#view-books').textContent()).includes(payload));
+    await page.waitForFunction(payload=>document.querySelector('#view-books').textContent.includes(payload),payload);
     await page.evaluate(() => {window.snapshotError = null;});
     console.log('PASS hostile paths, words, history, errors, Markdown and CSV formulas');
     page.on('dialog', dialog => dialog.dismiss());
