@@ -97,3 +97,17 @@ test('linked app presence stays alive while idle without crediting study time or
   now+=20000;await timer.update(false);assert.equal(beats,2);assert.equal(timer.seconds(),0);
   await timer.finish();assert.equal(timer.session,null);
 });
+
+test('opening the linked app idle creates no session; presence begins only after learning',async()=>{
+  let now=100000,starts=0,beats=0;
+  const timer=new AutoStudyTimer({keepAlive:true,startWhenIdle:false,store:memory(),now:()=>now,api:{
+    start:async()=>{starts++;return {sessionId:'learning',session:{sequence:0,serverNowMs:now,activeSinceMs:null,accumulatedSeconds:0}};},
+    sync:async input=>{beats++;return {sessionId:'learning',session:{sequence:input.sequence,serverNowMs:now,activeSinceMs:input.tracking?now:null,leaseUntilMs:now+30000,accumulatedSeconds:0}};},
+    finish:async()=>({creditedSeconds:0}),
+  }});
+  await timer.update(false);now+=20000;await timer.update(false);
+  assert.equal(starts,0);assert.equal(timer.record,null);
+  await timer.update(true);assert.equal(starts,1);assert.equal(timer.tracking,true);
+  await timer.update(false);assert.equal(timer.tracking,false);
+  now+=20000;await timer.update(false);assert.equal(starts,1);assert.equal(beats,3);
+});

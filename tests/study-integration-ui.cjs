@@ -20,7 +20,7 @@ async function main(){
       assert.equal(await page.evaluate(()=>typeof crypto.randomUUID),'undefined');
       await page.evaluate(width=>{
         document.getElementById('landing-screen').classList.add('hidden');document.getElementById('library-content').classList.remove('hidden');
-        document.getElementById('layer-books').classList.remove('active-lib');document.getElementById('layer-words').classList.add('active-lib');
+        document.getElementById('layer-books').classList.add('active-lib');document.getElementById('layer-words').classList.remove('active-lib');
         document.getElementById('words-card-view').innerHTML='<div class="word-card">apple 사과</div>';
         window.testNow=Date.parse('2026-10-22T03:00:00Z');Date.now=()=>window.testNow;window.testPerformanceNow=1000;performance.now=()=>window.testPerformanceNow;window.savedRows={};window.testLinked=width===1280;window.remoteCalls=[];
         if(width===1280)localStorage.setItem('superword:history:fixture',JSON.stringify({legacy:{id:'legacy',startedAtMs:window.testNow-1800000,seconds:480,dailySeconds:{'2026-10-22':480},status:'finished'}}));
@@ -33,6 +33,7 @@ async function main(){
         const deliver=()=>{for(const item of subscriptions)if(!item.stopped)item.callback({data:()=>item.path.includes('dailyStats')?serverStats:{subjects:[{id:'vocab',name:'영단어'}],wordSnapshot:serverWord}});};
         const httpsCallable=(_,name)=>async data=>{
           window.remoteCalls.push(name);(window.remoteInputs||=[]).push({name,data});
+          if(name==='startWordStudy'&&!window.cameraStopAcknowledged)throw new Error('Word session was created before camera shutdown acknowledgement');
           if(name==='saveWordStudyLink'){window.serverLinkSaved=true;return {data:{linked:true}};}
           if(name==='restoreWordStudyLink')return {data:window.testLinked?{linked:true,token:'fixture-token'}:{linked:false}};
           if(name==='removeWordStudyLink')return {data:{linked:false}};
@@ -65,9 +66,14 @@ async function main(){
         const signInWithPopup=async()=>{},signInWithEmailAndPassword=async()=>{},GoogleAuthProvider=class{},signOut=async()=>{};
       `;
       await page.addScriptTag({type:'module',content:sdk+'\n'+core+'\n'+shared+'\n'+source});
+      await page.waitForFunction(()=>document.querySelector('[data-study-link-account]')?.textContent===(window.testLinked?'스터디: study@example.com':'단어앱 기록에 자동 저장'));
+      assert.equal(await page.evaluate(()=>window.remoteCalls.includes('startWordStudy')),false);
+      assert.equal(await page.evaluate(()=>window.remoteCalls.includes('prepareWordStudy')),false);
+      await page.evaluate(()=>{document.getElementById('layer-books').classList.remove('active-lib');document.getElementById('layer-words').classList.add('active-lib');});
       await page.waitForFunction(()=>document.querySelector('[data-study-link-status]')?.textContent.includes('학습 중')).catch(async error=>{throw new Error(JSON.stringify({errors,status:await page.locator('[data-study-link-status]').textContent(),cause:error.message}));});
       assert.equal(await page.evaluate(()=>window.studyPersistence),'LOCAL');
       if(width===1280){assert.equal(await page.evaluate(()=>window.autoRestored),true);await page.waitForFunction(()=>window.serverLinkSaved===true);}
+      if(width===1280)await page.waitForFunction(()=>window.remoteInputs.some(row=>row.name==='syncWordStudy'&&row.data.tracking===true));
       assert.equal(await page.locator('.study-link-panel').evaluate(node=>node.closest('#settings-modal')?.id),'settings-modal');
       assert.equal(await page.locator('.study-time-capsule').evaluate(node=>Boolean(node.closest('.ios-nav-actions'))),true);
       assert.equal(await page.locator('#library-content .study-link-panel').count(),0);

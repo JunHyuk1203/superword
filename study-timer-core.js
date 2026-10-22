@@ -10,8 +10,8 @@ export function studyUuid(cryptoApi=globalThis.crypto) {
 
 // One queue owns start/heartbeat/finish, including navigation during a request.
 export class AutoStudyTimer {
-  constructor({api,store,now=()=>Date.now(),onChange=()=>{},keepAlive=false}) {
-    Object.assign(this,{api,store,now,onChange,keepAlive});
+  constructor({api,store,now=()=>Date.now(),onChange=()=>{},keepAlive=false,startWhenIdle=keepAlive}) {
+    Object.assign(this,{api,store,now,onChange,keepAlive,startWhenIdle});
     this.record=store.read(); this.session=null; this.desired=false; this.finishing=false; this.tracking=false;
     this.busy=false; this.retryAt=0; this.lastSync=0; this.sequence=0; this.error='';
   }
@@ -22,7 +22,7 @@ export class AutoStudyTimer {
     this.busy=true;
     try {
       // A persisted start may have succeeded even if its reply was lost.
-      if (!this.session && (this.record || !this.finishing && (this.desired || this.keepAlive))) {
+      if (!this.session && (this.record || !this.finishing && (this.desired || this.startWhenIdle))) {
         this.record ??= {controllerId:studyUuid()};
         this.store.write(this.record);
         const result=await this.api.start(this.record);

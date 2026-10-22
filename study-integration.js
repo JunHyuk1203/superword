@@ -2,7 +2,7 @@ import {initializeApp,getApps,getApp} from 'https://www.gstatic.com/firebasejs/1
 import {getAuth,onAuthStateChanged,signInWithPopup,signInWithEmailAndPassword,signInWithCustomToken,GoogleAuthProvider,signOut,onIdTokenChanged,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
 import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js';
 import {getFirestore,doc,setDoc,collection,query,orderBy,limit,getDocs,onSnapshot,documentId} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
-import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261022-5';
+import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261023-1';
 import {wordLiveSeconds} from './study-word-time.js?v=20261022-1';
 
 const config={apiKey:'AIzaSyBF8-jNyMdm1izozV2S5OoB6KtnIQ716Yw',authDomain:'study-junhyuk1203-20261021.firebaseapp.com',projectId:'study-junhyuk1203-20261021',appId:'1:555183292594:web:64b739b20ca4b32d63c9ab'};
@@ -130,10 +130,10 @@ function makeTracker() {
       if(record.sessionId)return guarded('syncWordStudy',{...record,sequence:Date.now(),tracking:false,present:appVisible()}).catch(async error=>{
         if(error.code!=='functions/failed-precondition')throw error;
         await guarded('finishStudySession',record);
+        await prepareWordStart();
         return guarded('startWordStudy',record);
       });
-      const name=(user.displayName||'회원').replace(/[\p{Cc}\p{Cf}]/gu,'').trim().slice(0,20);
-      await guarded('ensureProfile',{displayName:name.length>=2?name:'회원'});
+      await prepareWordStart();
       return guarded('startWordStudy',record);
     },
     async sync(record){
@@ -141,7 +141,7 @@ function makeTracker() {
       return guarded('syncWordStudy',{...record,present:appVisible()&&Boolean(wordUid)});
     },finish:record=>guarded('finishStudySession',record)
   };
-  linkedTracker=new AutoStudyTimer({api,store,onChange:paint,keepAlive:true});
+  linkedTracker=new AutoStudyTimer({api,store,onChange:paint,keepAlive:true,startWhenIdle:false});
   // Recover the saved session paused, then resume when a learning view is visible.
   if(linkedTracker.record)void linkedTracker.update(false,!appVisible());else void linkedTracker.update(learning(),!appVisible());
   paint();
@@ -173,7 +173,12 @@ async function restoreConnection() {
 let wordStartPreparation=null;
 function prepareWordStart() {
   if(!studyAuth.currentUser?.emailVerified)return Promise.resolve();
-  if(!wordStartPreparation)wordStartPreparation=call('prepareWordStudy',{}).then(reply=>{
+  if(!wordStartPreparation)wordStartPreparation=(async()=>{
+    const user=studyAuth.currentUser;
+    const name=(user.displayName||'회원').replace(/[\p{Cc}\p{Cf}]/gu,'').trim().slice(0,20);
+    await call('ensureProfile',{displayName:name.length>=2?name:'회원'});
+    return call('prepareWordStudy',{});
+  })().then(reply=>{
     if(reply.cameraStopped!==true)throw new Error('얼굴인식 종료를 확인하지 못했습니다. 다시 시도합니다.');
   }).finally(()=>{wordStartPreparation=null;});
   return wordStartPreparation;
