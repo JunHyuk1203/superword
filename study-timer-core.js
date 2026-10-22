@@ -1,3 +1,13 @@
+// randomUUID is restricted to secure contexts; getRandomValues also works on HTTP.
+export function studyUuid(cryptoApi=globalThis.crypto) {
+  if (typeof cryptoApi?.randomUUID === 'function') return cryptoApi.randomUUID();
+  const bytes=cryptoApi.getRandomValues(new Uint8Array(16));
+  bytes[6]=(bytes[6]&15)|64;
+  bytes[8]=(bytes[8]&63)|128;
+  const hex=Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');
+  return [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-');
+}
+
 // One queue owns start/heartbeat/finish, including navigation during a request.
 export class AutoStudyTimer {
   constructor({api,store,now=()=>Date.now(),onChange=()=>{},keepAlive=false}) {
@@ -13,7 +23,7 @@ export class AutoStudyTimer {
     try {
       // A persisted start may have succeeded even if its reply was lost.
       if (!this.session && (this.record || !this.finishing && (this.desired || this.keepAlive))) {
-        this.record ??= {controllerId:crypto.randomUUID()};
+        this.record ??= {controllerId:studyUuid()};
         this.store.write(this.record);
         const result=await this.api.start(this.record);
         this.record={...this.record,sessionId:result.sessionId};
@@ -96,7 +106,7 @@ export function localApi(store, now=()=>Date.now(), onCheckpoint=()=>{}) {
   }
   return {
     async start() {
-      current ??= {sessionId:crypto.randomUUID(),session:{startedAtMs:now(),accumulatedSeconds:0,dailySeconds:{},activeSinceMs:null,leaseUntilMs:null,serverNowMs:now()}};
+      current ??= {sessionId:studyUuid(),session:{startedAtMs:now(),accumulatedSeconds:0,dailySeconds:{},activeSinceMs:null,leaseUntilMs:null,serverNowMs:now()}};
       store.write(current);
       return {sessionId:current.sessionId,session:{...current.session}};
     },

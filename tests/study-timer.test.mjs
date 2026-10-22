@@ -1,6 +1,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {AutoStudyTimer,isLearning,localApi,todayStudySeconds} from '../study-timer-core.js';
+import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from '../study-timer-core.js';
+
+test('HTTP UUID fallback uses secure random bytes and preserves server controller format',()=>{
+  let calls=0;
+  const cryptoApi={getRandomValues(bytes){calls++;bytes.fill(255);return bytes;}};
+  assert.equal(studyUuid(cryptoApi),'ffffffff-ffff-4fff-bfff-ffffffffffff');
+  assert.equal(calls,1);
+  assert.match(studyUuid({getRandomValues:bytes=>crypto.getRandomValues(bytes)}),/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
+  assert.equal(studyUuid({randomUUID:()=> 'native-id'}),'native-id');
+});
 
 function memory(){let value=null;return {read:()=>value,write:next=>{value=next;}};}
 function response(id='session'){return {sessionId:id,session:{sequence:0,serverNowMs:100000,accumulatedSeconds:0,activeSinceMs:100000,leaseUntilMs:130000}};}

@@ -14,8 +14,10 @@ async function main(){
   try{
     for(const width of [320,390,1280]){
       const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
-      await page.route('**/*',route=>route.request().url()==='http://localhost:8765/'?route.fulfill({contentType:'text/html',body:html}):route.abort());
-      await page.goto('http://localhost:8765/');await page.addStyleTag({content:css});
+      await page.route('**/*',route=>route.request().url()==='http://word.test:8765/'?route.fulfill({contentType:'text/html',body:html}):route.abort());
+      await page.goto('http://word.test:8765/');await page.addStyleTag({content:css});
+      assert.equal(await page.evaluate(()=>window.isSecureContext),false);
+      assert.equal(await page.evaluate(()=>typeof crypto.randomUUID),'undefined');
       await page.evaluate(width=>{
         document.getElementById('landing-screen').classList.add('hidden');document.getElementById('library-content').classList.remove('hidden');
         document.getElementById('layer-books').classList.remove('active-lib');document.getElementById('layer-words').classList.add('active-lib');
@@ -78,6 +80,11 @@ async function main(){
       await page.evaluate(()=>{document.getElementById('settings-modal').classList.remove('hidden');document.getElementById('settings-modal').classList.add('show');});
       await page.waitForFunction(()=>document.querySelector('[data-study-link-status]')?.textContent.includes('일시정지'));
       assert.equal(await page.locator('.study-link-panel').isVisible(),true);
+      if(width!==1280) {
+        await page.locator('[data-study-connect]').click();
+        assert.equal(await page.locator('[aria-label="스터디 서비스 연동"]').evaluate(node=>node.open),true);
+        await page.locator('[aria-label="스터디 서비스 연동"] [aria-label="닫기"]').click();
+      }
       await page.screenshot({path:path.join(process.env.UI_TEST_OUTPUT||require('node:os').tmpdir(),`study-link-settings-${width}.png`),fullPage:false});
       await page.evaluate(()=>{document.getElementById('settings-modal').classList.add('hidden');document.getElementById('settings-modal').classList.remove('show');});
       await page.waitForFunction(()=>document.querySelector('[data-study-link-status]')?.textContent.includes('학습 중'));

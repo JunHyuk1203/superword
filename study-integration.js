@@ -2,7 +2,7 @@ import {initializeApp,getApps,getApp} from 'https://www.gstatic.com/firebasejs/1
 import {getAuth,onAuthStateChanged,signInWithPopup,signInWithEmailAndPassword,GoogleAuthProvider,signOut,onIdTokenChanged} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
 import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js';
 import {getFirestore,doc,setDoc,collection,query,orderBy,limit,getDocs,onSnapshot,documentId} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
-import {AutoStudyTimer,isLearning,localApi,todayStudySeconds} from './study-timer-core.js?v=20261022-4';
+import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261022-5';
 import {wordLiveSeconds} from './study-word-time.js?v=20261022-1';
 
 const config={apiKey:'AIzaSyBF8-jNyMdm1izozV2S5OoB6KtnIQ716Yw',authDomain:'study-junhyuk1203-20261021.firebaseapp.com',projectId:'study-junhyuk1203-20261021',appId:'1:555183292594:web:64b739b20ca4b32d63c9ab'};
@@ -69,7 +69,7 @@ function watchLinkedStats(){
 }
 function appVisible(){return !document.hidden && focused && document.hasFocus();}
 const tabKey='superword:study-tab';
-const tabId=sessionStorage.getItem(tabKey)||crypto.randomUUID();sessionStorage.setItem(tabKey,tabId);
+const tabId=sessionStorage.getItem(tabKey)||studyUuid();sessionStorage.setItem(tabKey,tabId);
 function storage(key) {
   return {read(){try{return JSON.parse(localStorage.getItem(key)||'null');}catch{return null;}},write(value){if(value==null)localStorage.removeItem(key);else localStorage.setItem(key,JSON.stringify(value));}};
 }
