@@ -72,7 +72,7 @@ async function main(){
           const user=auth.kind==='word'?{uid:'fixture',email:'fixture@example.com',emailVerified:true,getIdToken:async()=>'verified-word-token'}:null;
           auth.currentUser=user;cb(user);
         });};
-        const signInWithCustomToken=async(auth,token)=>{if(token!=='fixture-token')throw new Error('Invalid restore token');auth.currentUser={uid:'study-fixture',email:'study@example.com',emailVerified:true};window.autoRestored=true;authCallbacks.get(auth)(auth.currentUser);};
+        const signInWithCustomToken=async(auth,token)=>{if(token!=='fixture-token')throw new Error('Invalid restore token');auth.currentUser={uid:'study-fixture',email:'study@example.com',emailVerified:true,getIdToken:async()=>'verified-study-token'};window.autoRestored=true;authCallbacks.get(auth)(auth.currentUser);};
         const signInWithPopup=async()=>{},signInWithEmailAndPassword=async()=>{},GoogleAuthProvider=class{},signOut=async()=>{};
       `;
       await page.addScriptTag({type:'module',content:sdk+'\n'+core+'\n'+shared+'\n'+source});

@@ -2,7 +2,7 @@ import {initializeApp,getApps,getApp} from 'https://www.gstatic.com/firebasejs/1
 import {getAuth,onAuthStateChanged,signInWithPopup,signInWithEmailAndPassword,signInWithCustomToken,GoogleAuthProvider,signOut,onIdTokenChanged,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
 import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js';
 import {getFirestore,doc,setDoc,collection,query,orderBy,limit,getDocs,onSnapshot,documentId} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
-import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261023-4';
+import {AutoStudyTimer,isLearning,localApi,todayStudySeconds,studyUuid} from './study-timer-core.js?v=20261024-2';
 import {wordLiveSeconds} from './study-word-time.js?v=20261022-1';
 
 const config={apiKey:'AIzaSyBF8-jNyMdm1izozV2S5OoB6KtnIQ716Yw',authDomain:'study-junhyuk1203-20261021.firebaseapp.com',projectId:'study-junhyuk1203-20261021',appId:'1:555183292594:web:64b739b20ca4b32d63c9ab'};
@@ -43,6 +43,7 @@ const recordMode=document.createElement('button');recordMode.type='button';recor
 const $=selector=>panel.querySelector(selector);
 let tracker,linkedTracker,context='',linkedContext='',lastActivity=performance.now(),wordUid=null,ready=false,studyReady=false,token='',message='',outboxBusy=false,focused=document.hasFocus();
 let restoredWordUid='',restoringConnection=false,restoreRetryAt=0,savedConnection='',savingConnection=null,saveRetryAt=0,unlinking=false;
+let linkedEpoch=0,authTransition=false,retiringTracker=null;
 let linkedStats={key:'',subjectId:null,today:null,days:{},word:null,clock:null,error:''},linkedWatches=[],showDeviceRecords=false;
 function linkedSeconds(){
   if(!linkedStats.today||!linkedStats.subjectId)return null;
@@ -77,6 +78,7 @@ function storage(key) {
   return {read(){try{return JSON.parse(localStorage.getItem(key)||'null');}catch{return null;}},write(value){if(value==null)localStorage.removeItem(key);else localStorage.setItem(key,JSON.stringify(value));}};
 }
 function learning(ignoreIdle=false) {
+  if(authTransition||retiringTracker||unlinking)return false;
   const shown=id=>{const node=document.getElementById(id);return node && !node.classList.contains('hidden');};
   if(!shown('library-content')||shown('landing-screen'))return false;
   const test=shown('test-modal') && ['test-flash','test-quiz','test-short','test-trace'].some(shown);
@@ -99,7 +101,7 @@ function paint() {
   $('[data-study-link-status]').textContent=message || linkedStats.error || linkedTracker?.error || tracker?.error || (tracker?.busy&&!tracker?.desired?'학습 시간을 저장하는 중…':tracker?.session?tracker.desired?(linked?'학습 중 · 스터디 영단어 시간에 연동':'학습 중 · 단어앱에 기록'):'학습 일시정지 · 단어로 돌아오면 이어서 측정합니다.':tracker?.lastSaved!=null?`${tracker.lastSaved}초 단어앱에 기록 완료`:'단어 카드나 테스트를 열면 자동으로 시간을 측정합니다.');
 }
 function makeTracker() {
-  if(!ready || !studyReady)return;
+  if(!ready || !studyReady || authTransition || retiringTracker)return;
   if(wordUid&&!studyAuth.currentUser&&(restoringConnection||restoredWordUid!==wordAuth.currentUser.uid&&Date.now()>=restoreRetryAt)) {
     void restoreConnection();return;
   }
@@ -118,13 +120,35 @@ function makeTracker() {
   }
   const remoteContext=linked&&wordUid?`${wordUid}:${user.uid}`:'';
   if(remoteContext===linkedContext)return;
-  void linkedTracker?.finish();linkedTracker=null;linkedContext=remoteContext;
+  if(linkedTracker) {
+    const previous=linkedTracker;
+    linkedEpoch++;
+    retiringTracker=previous.finish().then(result=>{
+      if(!result.ok || previous.record){message=result.error||'이전 학습 기록을 저장하는 중입니다.';return;}
+      if(linkedTracker===previous){linkedTracker=null;linkedContext='';}
+    }).finally(()=>{retiringTracker=null;paint();});
+    return;
+  }
+  linkedContext=remoteContext;
   if(!remoteContext){paint();return;}
   const store=storage(`superword:study:${remoteContext}:${tabId}:remote`);
   const owner=user?.uid;
+  const ownerWord=wordUid,epoch=++linkedEpoch;
+  let instance;
+  // Keep the original User object: refresh its credential without using a new account.
+  const ownerToken=()=>user.getIdToken();
   const guarded=(name,data)=>{
-    if(studyAuth.currentUser?.uid!==owner)throw new Error('연동 계정이 변경되었습니다. 이전 계정으로 다시 연결하면 기록을 복구합니다.');
-    return call(name,data);
+    const retiring=instance?.finishing && (name==='startWordStudy'||name==='syncWordStudy');
+    if(retiring)data={...data,tracking:false,present:false};
+    if((name==='finishStudySession'||retiring) && studyAuth.currentUser?.uid!==owner)return ownerToken().then(async credential=>{
+      const response=await fetch(`https://asia-northeast3-${config.projectId}.cloudfunctions.net/${name}`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${credential}`},body:JSON.stringify({data})});
+      const body=await response.json();
+      if(body.error)throw Object.assign(new Error(body.error.message),{code:`functions/${body.error.status.toLowerCase().replaceAll('_','-')}`,details:body.error.details});
+      if(!response.ok)throw new Error('이전 계정의 학습 기록을 저장하지 못했습니다.');
+      return body.result;
+    });
+    if(name!=='finishStudySession' && !retiring && (studyAuth.currentUser?.uid!==owner || wordUid!==ownerWord || linkedEpoch!==epoch))throw new Error('연동 계정이 변경되었습니다. 이전 계정으로 다시 연결하면 기록을 복구합니다.');
+    return call(name,{...data,contractVersion:'2026-10-24'});
   };
   const api={
     async start(record){
@@ -150,10 +174,10 @@ function makeTracker() {
       await guarded('ensureProfile',{displayName:name.length>=2?name:'회원'});
       result=await guarded('startWordStudy',input);
     }
-    if(input.tracking&&learning(true)){lastActivity=performance.now();linkedTracker.desired=true;}
+    if(input.tracking&&learning(true)&&linkedTracker===instance&&linkedEpoch===epoch&&studyAuth.currentUser?.uid===owner&&wordUid===ownerWord&&!instance.finishing){lastActivity=performance.now();instance.desired=true;}
     return {...result,initialSyncComplete:true};
   }
-  linkedTracker=new AutoStudyTimer({api,store,onChange:paint,keepAlive:true,startWhenIdle:false,heartbeatMs:5000});
+  instance=linkedTracker=new AutoStudyTimer({api,store,onChange:paint,keepAlive:true,startWhenIdle:false,heartbeatMs:5000});
   // Recover the saved session paused, then resume when a learning view is visible.
   if(linkedTracker.record)void linkedTracker.update(false,!appVisible());else void linkedTracker.update(learning(),!appVisible());
   paint();
@@ -222,19 +246,23 @@ $('[data-study-connect]').addEventListener('click',()=>dialog.showModal());
 dialog.addEventListener('close',()=>{lastActivity=performance.now();tick();});
 async function login(action) {
   const errorNode=dialog.querySelector('[data-study-login-error]');errorNode.textContent='연결 중…';
+  authTransition=true;
   try {
     await studyAuthReady;
-    await linkedTracker?.finish();
+    const previous=linkedTracker,result=await previous?.finish();
+    if(previous && (!result.ok||previous.record))throw new Error(result.error||'이전 학습 기록을 저장하지 못했습니다.');
     await action();
     if(!studyAuth.currentUser.emailVerified)throw new Error('스터디 계정의 이메일을 먼저 인증해 주세요.');
     await persistConnection();
     errorNode.textContent='';dialog.querySelector('[name=password]').value='';dialog.close();message='';
   }catch(error){errorNode.textContent=error.code==='auth/invalid-credential'?'이메일과 비밀번호를 확인해 주세요.':error.code==='auth/unauthorized-domain'?'현재 단어앱 주소에서 스터디 로그인이 허용되지 않습니다.':error.message;}
+  finally{authTransition=false;makeTracker();}
 }
 dialog.querySelector('[data-study-google]').addEventListener('click',()=>{
   // Open the popup in the click task, before any asynchronous save can block it.
   const provider=new GoogleAuthProvider();provider.setCustomParameters({prompt:'select_account'});
-  const pending=signInWithPopup(studyAuth,provider);void login(()=>pending);
+  authTransition=true;void linkedTracker?.finish();
+  const pending=signInWithPopup(studyAuth,provider);void pending.catch(()=>{});void login(()=>pending);
 });
 dialog.querySelector('[data-study-email-form]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;void login(()=>signInWithEmailAndPassword(studyAuth,form.email.value,form.password.value));});
 $('[data-study-disconnect]').addEventListener('click',async()=>{

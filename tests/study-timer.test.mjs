@@ -14,6 +14,57 @@ test('HTTP UUID fallback uses secure random bytes and preserves server controlle
 function memory(){let value=null;return {read:()=>value,write:next=>{value=next;}};}
 function response(id='session'){return {sessionId:id,session:{sequence:0,serverNowMs:100000,accumulatedSeconds:0,activeSinceMs:100000,leaseUntilMs:130000}};}
 
+test('finish shares the heartbeat drain and resolves only after final storage acknowledgement',async()=>{
+  let now=100000,release,save,finishes=0,ended=false;
+  const timer=new AutoStudyTimer({store:memory(),now:()=>now,heartbeatMs:5000,api:{
+    start:async()=>({...response(),initialSyncComplete:true}),sync:()=>new Promise(resolve=>{release=()=>resolve(response());}),
+    finish:()=>{finishes++;return new Promise(resolve=>{save=()=>resolve({creditedSeconds:5});});}
+  }});
+  await timer.update(true);now+=5000;const beat=timer.update(true);await Promise.resolve();
+  const finish=timer.finish();assert.equal(finish,beat);void finish.then(()=>{ended=true;});
+  await Promise.resolve();assert.equal(ended,false);assert.equal(finishes,0);
+  release();await new Promise(resolve=>setImmediate(resolve));assert.equal(finishes,1);assert.equal(ended,false);
+  save();assert.deepEqual(await finish,{ok:true,pending:false});assert.equal(timer.record,null);
+});
+
+test('permanent resume rejection sends one request per backoff instead of recursing',async()=>{
+  let calls=0,now=100000;
+  const paused={sessionId:'old',session:{sequence:0,serverNowMs:now,activeSinceMs:null,leaseUntilMs:null}};
+  const timer=new AutoStudyTimer({store:memory(),now:()=>now,jitter:()=>0,api:{start:async()=>({...paused,initialSyncComplete:true}),sync:async()=>{calls++;return paused;}}});
+  const result=await timer.update(true);assert.equal(result.ok,false);assert.equal(calls,1);
+  await timer.update(true);assert.equal(calls,1);now+=1000;await timer.update(true);assert.equal(calls,2);
+});
+
+test('unchanged UI polling during a denied heartbeat cannot trigger another immediate request',async()=>{
+  let release,calls=0;
+  const paused={sessionId:'old',session:{sequence:0,serverNowMs:100000,activeSinceMs:null,leaseUntilMs:null}};
+  const timer=new AutoStudyTimer({store:memory(),now:()=>100000,jitter:()=>0,api:{start:async()=>({...paused,initialSyncComplete:true}),sync:()=>{calls++;return new Promise(resolve=>{release=()=>resolve(paused);});}}});
+  const pending=timer.update(true);await new Promise(resolve=>setImmediate(resolve));
+  for(let i=0;i<20;i++)assert.equal(timer.update(true),pending);
+  release();const result=await pending;
+  assert.equal(result.ok,false);assert.equal(calls,1);
+});
+
+test('terminal max-duration finishes once and opens at most one replacement in a drain',async()=>{
+  let starts=0,finishes=0;
+  const timer=new AutoStudyTimer({store:memory(),now:()=>100000,api:{
+    start:async()=>({sessionId:`s${++starts}`,session:{sequence:0,serverNowMs:100000,activeSinceMs:null,leaseUntilMs:null,canResume:false,terminalReason:'max-duration'}}),
+    finish:async()=>{finishes++;return {creditedSeconds:12};},sync:async()=>{throw Error('unexpected');}
+  }});
+  const result=await timer.update(true);assert.equal(result.ok,false);assert.equal(starts,2);assert.equal(finishes,2);
+});
+
+test('slow replies schedule the next heartbeat from sending time and explicit save failures remain pending',async()=>{
+  let now=100000,release,calls=0;
+  const timer=new AutoStudyTimer({store:memory(),now:()=>now,heartbeatMs:5000,jitter:()=>0,api:{
+    start:async()=>({...response(),initialSyncComplete:true}),sync:async input=>{calls++;if(calls===1)await new Promise(resolve=>{release=resolve;});return {...response(),session:{...response().session,sequence:input.sequence}};},
+    finish:async()=>{throw Error('offline');}
+  }});
+  await timer.update(true);now+=5000;const beat=timer.update(true);await Promise.resolve();now+=8000;release();await beat;
+  await timer.update(true);assert.equal(calls,2);
+  const result=await timer.finish();assert.equal(result.ok,false);assert.equal(result.pending,true);assert.equal(timer.record.sessionId,'session');
+});
+
 test('discarding an expired saved session while idle does not create or run another',async()=>{
  const store=memory();store.write({sessionId:'expired',controllerId:'same'});let starts=0;
  const timer=new AutoStudyTimer({store,keepAlive:true,startWhenIdle:false,api:{start:async()=>{starts++;return null;},sync:async()=>{throw Error('Unexpected tracking');}}});
@@ -32,7 +83,8 @@ test('only signed in, visible card/test learning counts; idle, editor and modal 
 test('leaving while automatic start is in flight finishes that session exactly once',async()=>{
   let release;const calls=[];
   const timer=new AutoStudyTimer({store:memory(),now:()=>100000,api:{start:()=>new Promise(resolve=>{release=resolve;}),sync:async()=>{calls.push('sync');return response();},finish:async()=>{calls.push('finish');return {creditedSeconds:8};}}});
-  const pending=timer.update(true);await timer.finish();release(response());await pending;
+  const pending=timer.update(true);await Promise.resolve();const finishing=timer.finish();
+  assert.equal(finishing,pending);release(response());await finishing;
   assert.deepEqual(calls,['finish']);assert.equal(timer.session,null);assert.equal(timer.lastSaved,8);
 });
 
@@ -107,7 +159,7 @@ test('a background finish is not cancelled by polling while a heartbeat is in fl
   const api={start:async()=>response(),sync:()=>new Promise(resolve=>{release=resolve;}),finish:async()=>{finished++;return {creditedSeconds:5};}};
   const timer=new AutoStudyTimer({api,store:memory(),now:()=>now});
   const pending=timer.update(true);await Promise.resolve();await Promise.resolve();
-  await timer.finish();await timer.update(false);release(response());await pending;
+  const finishing=timer.finish();const idle=timer.update(false);release(response());await Promise.all([pending,finishing,idle]);
   assert.equal(finished,1);assert.equal(timer.session,null);
 });
 

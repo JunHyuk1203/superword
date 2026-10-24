@@ -2,6 +2,7 @@
   "name": "superword-security-checks",
   "private": true,
   "scripts": {
+    "test:study": "node --test tests/study-timer.test.mjs tests/study-context.test.mjs",
     "test:server": "node --test functions/test/*.test.cjs",
     "test:rules": "firebase emulators:exec --only firestore --project demo-superword \"node --test tests/firestore-rules.test.cjs\""
   },

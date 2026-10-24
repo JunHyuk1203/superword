@@ -10,54 +10,75 @@ export function studyUuid(cryptoApi=globalThis.crypto) {
 
 // One queue owns start/heartbeat/finish, including navigation during a request.
 export class AutoStudyTimer {
-  constructor({api,store,now=()=>Date.now(),onChange=()=>{},keepAlive=false,startWhenIdle=keepAlive,heartbeatMs=20000}) {
-    Object.assign(this,{api,store,now,onChange,keepAlive,startWhenIdle,heartbeatMs});
+  constructor({api,store,now=()=>performance.now(),onChange=()=>{},keepAlive=false,startWhenIdle=keepAlive,heartbeatMs=20000,jitter=()=>Math.random()*250}) {
+    Object.assign(this,{api,store,now,onChange,keepAlive,startWhenIdle,heartbeatMs,jitter});
     this.record=store.read(); this.session=null; this.desired=false; this.finishing=false; this.tracking=false;
-    this.busy=false; this.retryAt=0; this.lastSync=0; this.sequence=0; this.error='';
+    this.busy=false; this.retryAt=0; this.lastSync=-Infinity; this.sequence=0; this.error='';this.failures=0;this.revision=0;
   }
   update(active, finish=false) {
+    const changed=this.desired!==active || finish&&!this.finishing;
     this.desired=active;
     this.finishing=this.finishing || finish;
-    if (this.busy) return Promise.resolve();
-    if (this.now()<this.retryAt) return Promise.resolve();
-    this.pending=this.run();
+    if(changed)this.revision++;
+    if (this.busy) return this.pending;
+    if (this.now()<this.retryAt) return Promise.resolve({ok:false,pending:Boolean(this.record),error:this.error});
+    this.busy=true;
+    this.pending=Promise.resolve().then(()=>this.run());
     return this.pending;
   }
   async run() {
-    this.busy=true;
+    let replacements=0;
     try {
+      while(true) {
       // A persisted start may have succeeded even if its reply was lost.
       if (!this.session && (this.record || !this.finishing && (this.desired || this.startWhenIdle))) {
         this.record ??= {controllerId:studyUuid()};
         this.store.write(this.record);
+        const sentAt=this.now();
         const result=await this.api.start(this.record);
         this.record=result?{...this.record,sessionId:result.sessionId}:null;
         this.store.write(this.record);
         if(result)this.observe(result);
-        this.lastSync=result?.initialSyncComplete?this.now():0;
+        this.lastSync=result?.initialSyncComplete?sentAt:-Infinity;
+      }
+      if(this.session?.canResume===false)this.terminal=this.session.terminalReason||'finished';
+      if(this.terminal && this.session) {
+        await this.saveFinish();
+        this.terminal=null;
+        if(this.finishing){this.finishing=false;break;}
+        if(this.desired && replacements++===0)continue;
+        if(this.desired)throw new Error('학습 재개가 거절되었습니다. 잠시 후 다시 시도합니다.');
+        break;
       }
       if (this.session && this.finishing) {
-        const result=await this.api.finish(this.record);
-        this.lastSaved=result.creditedSeconds;
-        this.record=null; this.session=null; this.store.write(null);
-        this.tracking=false;
+        await this.saveFinish();
         this.finishing=false;
+        break;
       } else if (this.session && (this.tracking!==this.desired || (this.desired||this.keepAlive) && this.now()-this.lastSync>=this.heartbeatMs)) {
-        const result=await this.api.sync({...this.record,sequence:++this.sequence,tracking:this.desired});
-        this.observe(result); this.lastSync=this.now();
+        const desired=this.desired,revision=this.revision,sentAt=this.now();
+        const result=await this.api.sync({...this.record,sequence:++this.sequence,tracking:desired});
+        this.observe(result); this.lastSync=sentAt;
+        if(this.session?.canResume===false)continue;
+        if(this.finishing || this.tracking!==this.desired && revision!==this.revision)continue;
+        if(this.tracking!==this.desired)throw new Error('학습 재개가 거절되었습니다. 잠시 후 다시 시도합니다.');
       }
-      this.error=''; this.retryAt=0;
+      break;
+      }
+      this.error=''; this.retryAt=0;this.failures=0;
       if(!this.session&&!this.record)this.finishing=false;
+      return {ok:true,pending:Boolean(this.finishing&&this.record)};
     } catch(error) {
       // Keep the pending record so reload/offline recovery cannot double-credit.
-      if (error.code==='functions/failed-precondition' && this.record?.sessionId && /진행 중인 영단어/.test(error.message)) {
-        await this.api.finish(this.record).then(()=>{this.record=null;this.session=null;this.store.write(null);}).catch(()=>{});
-      }
+      if(error.details?.canResume===false)this.terminal=error.details.terminalReason||'finished';
       this.error=error.code==='functions/internal'?'스터디 서버에서 기록을 처리하지 못했습니다. 잠시 후 자동으로 다시 시도합니다.':error.message || '인터넷 연결을 확인해 주세요.';
-      this.retryAt=this.now()+1000;
+      this.retryAt=this.now()+Math.min(30000,1000*2**Math.min(this.failures++,5))+this.jitter();
+      return {ok:false,pending:Boolean(this.record),error:this.error};
     } finally {this.busy=false;this.onChange();}
-    // Handle leaving during an in-flight start/sync without waiting for a tick.
-    if (this.session && !this.error && (this.finishing || this.tracking!==this.desired)) return this.run();
+  }
+  async saveFinish() {
+    const result=await this.api.finish(this.record);
+    this.lastSaved=result.creditedSeconds;
+    this.record=null;this.session=null;this.tracking=false;this.store.write(null);
   }
   finish(){return this.update(false,true);}
   observe(result) {
@@ -104,7 +125,8 @@ export function localApi(store, now=()=>Date.now(), onCheckpoint=()=>{}) {
         cursor=end;
       }
     }
-    Object.assign(session,{activeSinceMs:tracking?time:null,leaseUntilMs:tracking?Math.min(time+30000,session.startedAtMs+43200000):null,serverNowMs:time});
+    const canResume=time<session.startedAtMs+43200000;
+    Object.assign(session,{activeSinceMs:tracking&&canResume?time:null,leaseUntilMs:tracking&&canResume?Math.min(time+30000,session.startedAtMs+43200000):null,serverNowMs:time,canResume,terminalReason:canResume?null:'max-duration'});
     store.write(current);
     onCheckpoint({id:current.sessionId,startedAtMs:session.startedAtMs,updatedAtMs:time,seconds:Math.floor(session.accumulatedSeconds),dailySeconds:Object.fromEntries(Object.entries(session.dailySeconds||{}).map(([date,seconds])=>[date,Math.floor(seconds)])),status:finished?'finished':tracking?'active':'paused'});
     return {sessionId:current.sessionId,session:{...session}};
